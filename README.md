@@ -8,16 +8,21 @@ Godot 4.5 (GL Compatibility), GDScript. Built for the web, without threads.
 
 ## Level 1: The Coal Forest (Carboniferous, ~307 MYA)
 
-- **The swamp:** a new layout every run. It has scale trees (Lepidodendron, Sigillaria), giant horsetails (Calamites), tree ferns, fern carpet, fallen logs, and black, wadeable pools.
-- **Arthropleura:** a giant millipede, scaled up for horror. It's blind and hunts by vibration:
-  - Walking footsteps carry 7 m, running 20 m, crouching 2 m. Water makes every step louder.
-  - When you're out of breath, your panting gives you away.
-  - Stand still and it can crawl right past you. Move within ~3 m of it and it feels you.
-  - If it hears you within 16 m, it hunts you. Otherwise it comes to investigate, then rears up and searches.
-  - It drifts your way more often than chance would suggest.
-- **Meganeura:** giant griffinflies. They ignore you, except that they swarm the camcorder lamp, and their droning near you counts as noise.
-- **The lamp:** you'll want it, and its battery runs out. It also draws the flies.
-- **The way out:** a scrap of the Backrooms standing in the swamp, 130 to 165 m from where you start. You'll find it by its fluorescent hum and a faint smudge of light in the fog.
+**Goal: fill the camcorder's shot list, then find the way out.** Keep a creature near the centre of frame, close enough and unobstructed, until the red bar fills.
+
+| Shot | Creature | The catch |
+|---|---|---|
+| 1 | **Meganeura** (griffinfly) | Drawn to your lamp. Their droning near you counts as noise. |
+| 2 | **Eryops** (2 m amphibian) | Lies in the deep pools and sinks at any nearby noise. It only resurfaces after ~6 to 9 s of quiet, and its eyes shine in the lamp. |
+| 3 | **Pulmonoscorpius** | Sits motionless beside fallen logs. It rattles inside ~4.5 m and strikes if you're still inside ~3.6 m when the rattle ends. |
+| 4 | **Arthropleura** | The thing hunting you. It needs 3 s in frame. |
+
+- **Arthropleura hunts by vibration:**
+  - Walking footsteps carry 7 m, running 20 m, crouching 2 m. Water makes every step louder, and so does panting when you're out of breath.
+  - Stand still and it can crawl right past you.
+- **Each finished shot** darkens the swamp and makes the millipede bolder and faster.
+- **The way out** is a scrap of the Backrooms in the swamp, 130 to 165 m from the start. It stays dark until the list is complete. Then its light comes on and a **second millipede** wakes up.
+- **The swamp:** a new layout every run, with scale trees, giant horsetails, tree ferns, fern carpet, fallen logs and black, wadeable pools.
 
 Every mesh is procedural (`src/meshes.gd`). The creature and effect sounds are synthesized at load time (`src/synth.gd`). The swamp ambience is two CC0 field recordings; see `audio/CREDITS.md`.
 
@@ -35,7 +40,7 @@ Phone (portrait or landscape): left thumb is a floating stick (drag past the rin
 ```
 
 Dev flags are a URL query on web, or `-- key=value` on desktop:
-`play` (skip title), `seed=N`, `mill=D` + `mturn=rad` (spawn it D m ahead), `exit` (start by the door), `light`, `fly`, `freeze`, `yaw=` / `pitch=` (degrees), `die`, `win`, `touch`, `debug` (logs position and yaw).
+`play` (skip title), `seed=N`, `mill=D` + `mturn=rad` (spawn it D m ahead), `exit` (start by the door), `light`, `fly`, `freeze`, `yaw=` / `pitch=` (degrees), `die`, `win`, `touch`, `debug` (logs position and yaw), `shots=N` (first N shots done), `near=eryops|scorp` + `neard=m` (start beside one).
 
 Screenshots: serve `build/web` on :8792, then run `node tools/shot.mjs "?play&seed=42" out.png 12000`. Playwright must be resolvable.
 

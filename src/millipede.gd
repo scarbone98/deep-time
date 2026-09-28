@@ -28,6 +28,8 @@ var wiggle := 0.5
 var rear := 0.0
 var gait := 0.0
 var active := false
+var drift := 0.45  # how often roaming heads your way
+var hunt_speed := 5.2
 var skitter: AudioStreamPlayer3D
 var hiss: AudioStreamPlayer3D
 var rng := RandomNumberGenerator.new()
@@ -202,7 +204,7 @@ func _think(dt: float) -> void:
 			if timer <= 0.0:
 				_pick_roam()
 		"hunt":
-			want_speed = 5.2
+			want_speed = hunt_speed
 			wiggle = 0.08
 			timer -= dt
 			if arrive or timer <= 0.0:
@@ -231,7 +233,7 @@ func _pick_roam() -> void:
 	var a := rng.randf() * TAU
 	var off := Vector3(cos(a), 0, sin(a))
 	# it drifts your way more often than chance would say
-	if rng.randf() < 0.45:
+	if rng.randf() < drift:
 		target = player.global_position + off * rng.randf_range(15.0, 32.0)
 	else:
 		target = pos[0] + off * rng.randf_range(15.0, 40.0)

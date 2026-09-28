@@ -16,6 +16,7 @@ var hum: AudioStreamPlayer3D
 var t := 0.0
 var flicker := 0.0
 var next_flicker := 4.0
+var on := false  # dark until the shot list is done
 
 
 func setup(w: World, s: Dictionary, p: Player) -> void:
@@ -92,8 +93,7 @@ func setup(w: World, s: Dictionary, p: Player) -> void:
 	# the doorway: flat yellow light, the next level
 	door_mat = StandardMaterial3D.new()
 	door_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	door_mat.albedo_color = Color(1.0, 0.9, 0.55)
-	door_mat.disable_fog = true
+	door_mat.albedo_color = Color(0.04, 0.035, 0.02)
 	var dm := BoxMesh.new()
 	dm.size = Vector3(1.1, 2.2, 0.02)
 	dm.material = door_mat
@@ -148,6 +148,14 @@ func setup(w: World, s: Dictionary, p: Player) -> void:
 
 
 func begin() -> void:
+	if on:
+		hum.play()
+
+
+func activate() -> void:
+	on = true
+	door_mat.albedo_color = Color(1.0, 0.9, 0.55)
+	door_mat.disable_fog = true
 	hum.play()
 
 
@@ -156,8 +164,17 @@ func inside() -> bool:
 	return absf(l.x) < 0.5 and absf(l.z) < 0.3
 
 
+func near_door() -> bool:
+	return to_local(player.global_position).length() < 3.0
+
+
 func _process(dt: float) -> void:
 	t += dt
+	if not on:
+		light.light_energy = 0.0
+		panel_mat.emission_energy_multiplier = 0.0
+		glow_mat.albedo_color.a = 0.0
+		return
 	next_flicker -= dt
 	if next_flicker <= 0.0:
 		flicker = randf_range(0.2, 0.9)

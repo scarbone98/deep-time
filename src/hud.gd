@@ -24,6 +24,11 @@ var clock := 0.0
 var tip_time := 0.0
 var tips: Array = []
 var touch_mode := false
+var shot_label: Label
+var focus: Control
+var focus_name := ""
+var focus_prog := 0.0
+var flash := 0.0
 
 
 func _ready() -> void:
@@ -54,6 +59,13 @@ func _ready() -> void:
 	date.offset_left = -320
 	date.offset_right = -20
 	date.offset_top = -36
+	shot_label = _label(osd, "", 11, Vector2(20, 40))
+	shot_label.modulate = Color(1, 1, 1, 0.85)
+	focus = Control.new()
+	focus.set_anchors_preset(Control.PRESET_FULL_RECT)
+	focus.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	focus.draw.connect(_draw_focus)
+	osd.add_child(focus)
 	tip = _label(osd, "", 14, Vector2.ZERO)
 	tip.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
 	tip.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -102,6 +114,38 @@ func add_touch(pad: Control) -> void:
 	touch_mode = true
 
 
+func set_shots(shots: Array) -> void:
+	var lines := ["SHOT LIST"]
+	for s in shots:
+		lines.append(("[x] " if s.done else "[  ] ") + String(s.name))
+	shot_label.text = "\n".join(lines)
+
+
+## Viewfinder brackets while something worth filming is framed.
+func _draw_focus() -> void:
+	var c := focus.get_rect().size * 0.5
+	var col := Color(1, 1, 1, 0.8)
+	if flash > 0.0:
+		col = Color(0.5, 1.0, 0.5, flash)
+	elif focus_name == "":
+		return
+	var h := 46.0
+	var k := 14.0
+	for sx in [-1.0, 1.0]:
+		for sy in [-1.0, 1.0]:
+			var p := c + Vector2(sx * h, sy * h * 0.75)
+			focus.draw_line(p, p - Vector2(sx * k, 0), col, 2.0)
+			focus.draw_line(p, p - Vector2(0, sy * k), col, 2.0)
+	var font := ThemeDB.fallback_font
+	var txt := "GOT IT" if flash > 0.0 else focus_name
+	var w := font.get_string_size(txt, HORIZONTAL_ALIGNMENT_LEFT, -1, 11).x
+	focus.draw_string(font, c + Vector2(-w * 0.5, h * 0.75 + 18), txt, HORIZONTAL_ALIGNMENT_LEFT, -1, 11, col)
+	if flash <= 0.0:
+		var bw := 70.0
+		focus.draw_rect(Rect2(c + Vector2(-bw * 0.5, h * 0.75 + 24), Vector2(bw, 4)), Color(1, 1, 1, 0.25))
+		focus.draw_rect(Rect2(c + Vector2(-bw * 0.5, h * 0.75 + 24), Vector2(bw * focus_prog, 4)), Color(0.9, 0.2, 0.15, 0.9))
+
+
 func _label(parent: Control, text: String, size: int, at: Vector2) -> Label:
 	var l := Label.new()
 	l.text = text
@@ -145,7 +189,7 @@ func _process(dt: float) -> void:
 	tc.text = "%02d:%02d:%02d" % [s / 3600, (s / 60) % 60, s % 60] + ":%02d" % (int(clock * 30.0) % 30)
 	if touch_mode:  # keep hints clear of the thumbstick
 		var vs := get_viewport().get_visible_rect().size
-		tip.offset_top = -200.0 if vs.y > vs.x else -130.0
+		tip.offset_top = -290.0 if vs.y > vs.x else -130.0
 	# tips roll through one by one
 	if not tips.is_empty():
 		tip_time += dt
@@ -156,6 +200,8 @@ func _process(dt: float) -> void:
 			tips.pop_front()
 			tip_time = 0.0
 			tip.text = ""
+	flash = maxf(0.0, flash - dt)
+	focus.queue_redraw()
 	mat.set_shader_parameter("glitch", glitch)
 	mat.set_shader_parameter("dark", dark)
 	mat.set_shader_parameter("static_amt", static_amt)

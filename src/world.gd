@@ -17,6 +17,7 @@ var exit_pos := Vector3.ZERO
 var exit_yaw := 0.0
 var _colliders: StaticBody3D
 var lite := false  # phones: shorter draw distances
+var log_spots: Array = []  # [position, yaw] per fallen log
 
 
 func generate(seed_: int) -> void:
@@ -303,4 +304,24 @@ func _logs() -> void:
 		for k in int(len_) + 1:
 			var p := mi.position + along * (k - len_ * 0.5)
 			_add_trunk(p.x, p.z, 0.6, false)
+		log_spots.append([mi.position, yaw])
 		placed += 1
+
+
+## Spread-out spots in the deeper pools, away from the start.
+func pools(count: int) -> Array:
+	var out := []
+	for depth in [-0.8, -0.65, -0.5]:
+		for tries in 3000:
+			if out.size() >= count:
+				return out
+			var p := Vector3(rng.randf_range(-BOUND + 10, BOUND - 10), 0, rng.randf_range(-BOUND + 10, BOUND - 10))
+			if height_at(p.x, p.z) > depth or Vector2(p.x - spawn.x, p.z - spawn.z).length() < 30.0:
+				continue
+			var ok := true
+			for q in out:
+				if (q as Vector3).distance_to(p) < 45.0:
+					ok = false
+			if ok:
+				out.append(p)
+	return out

@@ -65,7 +65,7 @@ static func box(st: SurfaceTool, lo: Vector3, hi: Vector3, col: Color) -> void:
 
 ## A tube through `pts`, one ring per point. `pattern` checkers the bark
 ## (the diamond leaf-scars of scale trees).
-static func tube(st: SurfaceTool, pts: Array, radii: Array, cols: Array, sides: int, pattern := false) -> void:
+static func tube(st: SurfaceTool, pts: Array, radii: Array, cols: Array, sides: int, pattern := false, flat := 1.0) -> void:
 	var rings := []
 	for i in pts.size():
 		var fwd: Vector3
@@ -82,7 +82,7 @@ static func tube(st: SurfaceTool, pts: Array, radii: Array, cols: Array, sides: 
 		var ring := []
 		for s in sides:
 			var a := TAU * (s + (0.5 if pattern and i % 2 == 1 else 0.0)) / sides
-			ring.append(pts[i] + (side * cos(a) + up * sin(a)) * float(radii[i]))
+			ring.append(pts[i] + (side * cos(a) + up * sin(a) * flat) * float(radii[i]))
 		rings.append(ring)
 	for i in pts.size() - 1:
 		for s in sides:
@@ -383,3 +383,70 @@ static func fly_wing() -> ArrayMesh:
 	m.cull_mode = BaseMaterial3D.CULL_DISABLED
 	m.roughness = 0.2
 	return finish(st, m)
+
+
+# ---------------------------------------------------------------- Eryops
+
+## A two-metre amphibian, flat as a log, forward is -Z. Returns [body, eyes];
+## the eyes get their own unlit material so they catch in the dark.
+static func eryops() -> Array:
+	var st := begin()
+	var skin := Color(0.13, 0.12, 0.07)
+	var pts := [Vector3(0, 0, 1.35), Vector3(0, 0, 0.95), Vector3(0, 0, 0.55), Vector3(0, 0.02, 0.25), Vector3(0, 0.03, -0.1),
+		Vector3(0, 0.02, -0.35), Vector3(0, 0.02, -0.45), Vector3(0, 0.02, -0.62), Vector3(0, 0.01, -0.8), Vector3(0, 0, -0.95)]
+	var rad := [0.02, 0.08, 0.16, 0.3, 0.32, 0.27, 0.22, 0.27, 0.21, 0.08]
+	var col := []
+	for i in pts.size():
+		col.append(skin.lerp(Color(0.2, 0.17, 0.09), 0.5 + 0.5 * sin(i * 2.3)))
+	tube(st, pts, rad, col, 8, true, 0.42)
+	var leg := Color(0.16, 0.14, 0.08)
+	for z in [-0.3, 0.35]:
+		for sd in [-1.0, 1.0]:
+			var a := Vector3(0.22 * sd, 0, z)
+			var b := Vector3(0.5 * sd, -0.04, z - 0.08)
+			var c := Vector3(0.56 * sd, -0.2, z - 0.14)
+			tube(st, [a, b, c], [0.07, 0.05, 0.035], [leg, leg, leg.darkened(0.2)], 5)
+			for k in 3:
+				tri(st, c + Vector3(0, 0, -0.03), c + Vector3(0, 0, 0.03), c + Vector3(0.1 * sd, -0.02, (k - 1) * 0.08 - 0.05), leg.darkened(0.3))
+	var body := finish(st, chitin())
+	var es := begin()
+	for sd in [-1.0, 1.0]:
+		octa(es, Vector3(0.11 * sd, 0.1, -0.6), 0.035, Color(0.75, 0.72, 0.35))
+	var em := StandardMaterial3D.new()
+	em.vertex_color_use_as_albedo = true
+	em.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	return [body, finish(es, em)]
+
+
+# ---------------------------------------------------------------- Pulmonoscorpius
+
+## Body with legs and pincers; forward is -Z, tail attaches at (0, 0.03, 0.3).
+static func scorpion_body() -> ArrayMesh:
+	var st := begin()
+	var shell := Color(0.08, 0.07, 0.05)
+	tube(st, [Vector3(0, 0, 0.32), Vector3(0, 0.02, 0.1), Vector3(0, 0.03, -0.15), Vector3(0, 0.02, -0.3)],
+		[0.14, 0.2, 0.18, 0.12], [shell, shell.lightened(0.08), shell, shell], 8, true, 0.45)
+	var leg := Color(0.16, 0.12, 0.07)
+	for i in 4:
+		var z := -0.15 + i * 0.1
+		var dz := (i - 1.5) * 0.12
+		for sd in [-1.0, 1.0]:
+			tube(st, [Vector3(0.15 * sd, 0, z), Vector3(0.38 * sd, 0.12, z + dz), Vector3(0.55 * sd, -0.1, z + dz * 1.4)],
+				[0.03, 0.022, 0.008], [leg, leg, leg.darkened(0.3)], 4)
+	for sd in [-1.0, 1.0]:
+		tube(st, [Vector3(0.1 * sd, 0, -0.3), Vector3(0.25 * sd, 0.05, -0.5), Vector3(0.2 * sd, 0.04, -0.7)], [0.04, 0.035, 0.05], [shell, shell, shell], 5)
+		tube(st, [Vector3(0.2 * sd, 0.04, -0.7), Vector3(0.14 * sd, 0.05, -0.95)], [0.055, 0.008], [shell, leg], 5)
+		tube(st, [Vector3(0.24 * sd, 0.03, -0.72), Vector3(0.27 * sd, 0.03, -0.9)], [0.03, 0.005], [shell, leg], 4)
+	return finish(st, chitin())
+
+
+static func scorpion_tail(telson := false) -> ArrayMesh:
+	var st := begin()
+	var shell := Color(0.09, 0.075, 0.05)
+	if telson:
+		octa(st, Vector3(0, 0, 0.08), 0.075, Color(0.2, 0.13, 0.07))
+		tube(st, [Vector3(0, 0, 0.12), Vector3(0, -0.05, 0.22), Vector3(0, -0.13, 0.24)], [0.025, 0.012, 0.002],
+			[Color(0.3, 0.2, 0.1), Color(0.3, 0.2, 0.1), Color(0.1, 0.05, 0.03)], 4)
+	else:
+		tube(st, [Vector3.ZERO, Vector3(0, 0, 0.16)], [0.07, 0.06], [shell, shell.lightened(0.1)], 6, false, 0.9)
+	return finish(st, chitin())

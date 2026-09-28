@@ -18,6 +18,9 @@ static func all() -> Dictionary:
 		"death": death(),
 		"crack": crack(),
 		"call": distant_call(),
+		"beep": beep(),
+		"croak": croak(),
+		"chitter": chitter(),
 	}
 
 
@@ -199,4 +202,43 @@ static func distant_call() -> AudioStreamWAV:
 		ph += TAU * f / RATE
 		var env := sin(PI * t / 3.0)
 		s[i] = (sin(ph) + 0.4 * sin(ph * 2.01) + 0.2 * sin(ph * 3.03)) * env * 0.35
+	return _wav(s)
+
+
+## The camcorder's "got it" double beep.
+static func beep() -> AudioStreamWAV:
+	var s := _buf(0.3)
+	for i in s.size():
+		var t := float(i) / RATE
+		var on := 1.0 if t < 0.09 or (t > 0.15 and t < 0.24) else 0.0
+		s[i] = sin(TAU * 1760.0 * t) * on * 0.3
+	return _wav(s)
+
+
+## Eryops: a low wet bellow with a pulsing throat.
+static func croak() -> AudioStreamWAV:
+	var r := RandomNumberGenerator.new()
+	var s := _buf(1.3)
+	var ph := 0.0
+	var lp := 0.0
+	for i in s.size():
+		var t := float(i) / RATE
+		ph += TAU * (62.0 + 10.0 * sin(t * 3.0)) / RATE
+		lp += (r.randf_range(-1.0, 1.0) - lp) * 0.05
+		var pulse := 0.6 + 0.4 * sin(TAU * 9.0 * t)
+		var env := sin(PI * minf(t / 1.3, 1.0))
+		s[i] = clampf((sin(ph) + 0.5 * sin(ph * 2.0)) * 1.6, -1.0, 1.0) * pulse * env * 0.45 + lp * env * 0.6
+	return _wav(s)
+
+
+## A scorpion's warning: dry, fast rattling.
+static func chitter() -> AudioStreamWAV:
+	var r := RandomNumberGenerator.new()
+	var s := _buf(1.2)
+	for c in 70:
+		var at := r.randi_range(0, s.size() - 400)
+		var amp := r.randf_range(0.3, 0.7)
+		var f := r.randf_range(2500.0, 4200.0)
+		for k in 180:
+			s[at + k] += amp * exp(-k / 25.0) * (r.randf_range(-1.0, 1.0) * 0.6 + sin(TAU * f * k / RATE))
 	return _wav(s)

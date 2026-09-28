@@ -19,7 +19,7 @@ Godot 4.5 (GL Compatibility), GDScript. Built for the web, without threads.
 - **The lamp:** you'll want it, and its battery runs out. It also draws the flies.
 - **The way out:** a scrap of the Backrooms standing in the swamp, 130 to 165 m from where you start. You'll find it by its fluorescent hum and a faint smudge of light in the fog.
 
-Every mesh is procedural (`src/meshes.gd`). The creature and effect sounds are synthesized at load time (`src/synth.gd`).
+Every mesh is procedural (`src/meshes.gd`). The creature and effect sounds are synthesized at load time (`src/synth.gd`). The swamp ambience is two CC0 field recordings; see `audio/CREDITS.md`.
 
 ## Controls
 

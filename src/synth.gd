@@ -7,7 +7,6 @@ const RATE := 22050
 
 static func all() -> Dictionary:
 	return {
-		"amb": ambience(),
 		"hum": hum(),
 		"skitter": skitter(),
 		"wings": wings(),
@@ -54,48 +53,6 @@ static func _loop(s: PackedFloat32Array, fade: int) -> AudioStreamWAV:
 		s[i] = s[i] * k + s[n + i] * (1.0 - k)
 	s.resize(n)
 	return _wav(s, true)
-
-
-static func ambience() -> AudioStreamWAV:
-	var r := RandomNumberGenerator.new()
-	r.seed = 11
-	var fade := RATE / 2
-	var s := _buf(9.0 + 0.5)
-	var n := s.size()
-	var brown := 0.0
-	var lp := 0.0
-	for i in n:
-		brown = brown * 0.998 + r.randf_range(-1.0, 1.0) * 0.02
-		lp += (brown - lp) * 0.2
-		var swell := 0.75 + 0.25 * sin(TAU * 2.0 * i / (n - fade))
-		s[i] = lp * 0.55 * swell
-	# insect trills
-	for k in 16:
-		var at := r.randi_range(0, n - RATE)
-		var dur := r.randf_range(0.2, 0.9)
-		var f := r.randf_range(3200.0, 5200.0)
-		var am := r.randf_range(28.0, 60.0)
-		var amp := r.randf_range(0.02, 0.06)
-		for j in int(dur * RATE):
-			var tt := float(j) / RATE
-			var env := sin(PI * tt / dur)
-			s[at + j] += amp * env * sin(TAU * f * tt) * (0.5 + 0.5 * sin(TAU * am * tt))
-	# amphibian croaks, low and far
-	for k in 5:
-		var at := r.randi_range(0, n - RATE)
-		var f := r.randf_range(80.0, 120.0)
-		for j in int(0.45 * RATE):
-			var tt := float(j) / RATE
-			var pulse := exp(-fmod(tt, 0.055) * 70.0)
-			s[at + j] += 0.12 * pulse * sin(TAU * f * tt) * (1.0 - tt / 0.45)
-	# drips
-	for k in 22:
-		var at := r.randi_range(0, n - RATE)
-		var f := r.randf_range(1100.0, 2100.0)
-		for j in int(0.12 * RATE):
-			var tt := float(j) / RATE
-			s[at + j] += 0.05 * exp(-tt * 45.0) * sin(TAU * f * (1.0 + tt * 3.0) * tt)
-	return _loop(s, fade)
 
 
 static func hum() -> AudioStreamWAV:

@@ -18,6 +18,7 @@ var exit_node: Exit
 var hud: Hud
 var flies: Array[Meganeura] = []
 var amb: AudioStreamPlayer
+var rain: AudioStreamPlayer
 var sfx: AudioStreamPlayer
 var state := "title"
 var state_t := 0.0
@@ -72,10 +73,9 @@ func _ready() -> void:
 
 	hud = Hud.new()
 	add_child(hud)
-	amb = AudioStreamPlayer.new()
-	amb.stream = sounds.amb
-	amb.volume_db = -4.0
-	add_child(amb)
+	# field recordings (CC0, see audio/CREDITS.md): frogs and insects over dripping canopy
+	amb = _loop_player("res://audio/frogswamp.ogg", -6.0)
+	rain = _loop_player("res://audio/darkrain.ogg", -15.0)
 	sfx = AudioStreamPlayer.new()
 	add_child(sfx)
 
@@ -86,6 +86,16 @@ func _ready() -> void:
 		hud.show_card("DEEP TIME", "LEVEL 1  -  THE COAL FOREST",
 			"307 million years before anyone.\nSomewhere in the fog there is a way through.\n\nIt cannot see you. It feels you move.\n\nWASD move    SHIFT run    C crouch    F lamp",
 			"click to start recording")
+
+
+func _loop_player(path: String, db: float) -> AudioStreamPlayer:
+	var stream: AudioStreamOggVorbis = load(path)
+	stream.loop = true
+	var p := AudioStreamPlayer.new()
+	p.stream = stream
+	p.volume_db = db
+	add_child(p)
+	return p
 
 
 func _creature_start(rng: RandomNumberGenerator, lo: float, hi: float) -> Vector3:
@@ -190,6 +200,7 @@ func _start() -> void:
 	player.begin()
 	exit_node.begin()
 	amb.play()
+	rain.play(randf() * 60.0)
 	if not flags.has("freeze"):
 		mill.begin()
 		for f in flies:
@@ -254,6 +265,7 @@ func _process(dt: float) -> void:
 			sfx.stream = sounds.death
 			sfx.play()
 			amb.stop()
+			rain.stop()
 		if state_t > 0.9:
 			hud.static_amt = minf(1.0, (state_t - 0.9) * 3.0)
 		if state_t > 1.9:
@@ -261,7 +273,8 @@ func _process(dt: float) -> void:
 			hud.show_card("SIGNAL LOST", "", "the tape ends at %s" % hud.tc.text, "click to rewind", 0.6)
 	elif state == "won":
 		hud.white = minf(1.0, state_t * 0.8)
-		amb.volume_db = -4.0 - state_t * 12.0
+		amb.volume_db = -6.0 - state_t * 12.0
+		rain.volume_db = -15.0 - state_t * 12.0
 		if state_t > 1.6:
 			hud.white = 0.0
 			hud.glitch = 0.0
@@ -286,6 +299,8 @@ func _play_tick(dt: float) -> void:
 	hud.dark = lerpf(hud.dark, 1.0 - player.stamina, 1.0 - exp(-dt * 3.0))
 	var hunted := 1.0 if mill.state == "hunt" else 0.0
 	player.fear = lerpf(player.fear, maxf(near, hunted * 0.7), 1.0 - exp(-dt * 1.5))
+	# the frogs go quiet when it's close
+	amb.volume_db = lerpf(amb.volume_db, lerpf(-6.0, -30.0, player.fear), 1.0 - exp(-dt * 1.2))
 	if exit_node.inside():
 		_win()
 	# the swamp is never quite silent

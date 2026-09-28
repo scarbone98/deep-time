@@ -23,7 +23,9 @@ Every mesh is procedural (`src/meshes.gd`). The creature and effect sounds are s
 
 ## Controls
 
-WASD move · mouse look · Shift run · C / Ctrl crouch · F lamp · Esc pause
+Desktop: WASD move · mouse look · Shift run · C / Ctrl crouch · F lamp · Esc pause
+
+Phone (portrait or landscape): left thumb is a floating stick (drag past the ring to run) · right thumb looks · LAMP and CROUCH buttons. Touch mode turns on automatically on touchscreens; force it with `?touch`.
 
 ## Dev
 
@@ -33,7 +35,7 @@ WASD move · mouse look · Shift run · C / Ctrl crouch · F lamp · Esc pause
 ```
 
 Dev flags are a URL query on web, or `-- key=value` on desktop:
-`play` (skip title), `seed=N`, `mill=D` + `mturn=rad` (spawn it D m ahead), `exit` (start by the door), `light`, `fly`, `freeze`, `yaw=` / `pitch=` (degrees), `die`, `win`.
+`play` (skip title), `seed=N`, `mill=D` + `mturn=rad` (spawn it D m ahead), `exit` (start by the door), `light`, `fly`, `freeze`, `yaw=` / `pitch=` (degrees), `die`, `win`, `touch`, `debug` (logs position and yaw).
 
 Screenshots: serve `build/web` on :8792, then run `node tools/shot.mjs "?play&seed=42" out.png 12000`. Playwright must be resolvable.
 

@@ -16,6 +16,7 @@ var spawn_yaw := 0.0
 var exit_pos := Vector3.ZERO
 var exit_yaw := 0.0
 var _colliders: StaticBody3D
+var lite := false  # phones: shorter draw distances
 
 
 func generate(seed_: int) -> void:
@@ -183,10 +184,10 @@ func _flora() -> void:
 	dens.seed = rng.seed + 7
 	dens.frequency = 0.02
 	var kinds := {
-		"tree": {"meshes": [lepi(), lepi(), lepi(), Meshes.sigillaria(rng), Meshes.sigillaria(rng)], "chunk": 40.0, "vis": 115.0},
-		"cala": {"meshes": [Meshes.calamites(rng), Meshes.calamites(rng), Meshes.calamites(rng)], "chunk": 40.0, "vis": 80.0},
+		"tree": {"meshes": [lepi(), lepi(), lepi(), Meshes.sigillaria(rng), Meshes.sigillaria(rng)], "chunk": 40.0, "vis": 90.0 if lite else 115.0},
+		"cala": {"meshes": [Meshes.calamites(rng), Meshes.calamites(rng), Meshes.calamites(rng)], "chunk": 40.0, "vis": 60.0 if lite else 80.0},
 		"tfern": {"meshes": [Meshes.tree_fern(rng), Meshes.tree_fern(rng), Meshes.tree_fern(rng)], "chunk": 40.0, "vis": 80.0},
-		"fern": {"meshes": [Meshes.ground_fern(rng), Meshes.ground_fern(rng), Meshes.ground_fern(rng), Meshes.ground_fern(rng)], "chunk": 20.0, "vis": 58.0},
+		"fern": {"meshes": [Meshes.ground_fern(rng), Meshes.ground_fern(rng), Meshes.ground_fern(rng), Meshes.ground_fern(rng)], "chunk": 20.0, "vis": 40.0 if lite else 58.0},
 	}
 	var buckets := {}
 	var put := func(kind: String, x: float, z: float, y: float, s: float) -> void:

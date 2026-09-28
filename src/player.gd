@@ -34,6 +34,7 @@ var breath: AudioStreamPlayer
 var heart: AudioStreamPlayer
 var dying := 0.0
 var death_at := Vector3.ZERO
+var touch: TouchPad
 
 
 func setup(w: World, s: Dictionary) -> void:
@@ -88,9 +89,20 @@ func _unhandled_input(e: InputEvent) -> void:
 	if not control:
 		return
 	if e is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
-		yaw -= e.relative.x * 0.0022
-		pitch = clampf(pitch - e.relative.y * 0.0022, -1.35, 1.35)
-	if e.is_action_pressed("light") and battery > 0.0:
+		look(e.relative * 0.0022)
+	if e.is_action_pressed("light"):
+		toggle_light()
+
+
+func look(d: Vector2) -> void:
+	if not control:
+		return
+	yaw -= d.x
+	pitch = clampf(pitch - d.y, -1.35, 1.35)
+
+
+func toggle_light() -> void:
+	if battery > 0.0:
 		light.visible = not light.visible
 
 
@@ -105,6 +117,10 @@ func _physics_process(dt: float) -> void:
 		inp = Input.get_vector("left", "right", "fwd", "back")
 		crouching = Input.is_action_pressed("crouch")
 		sprint = Input.is_action_pressed("sprint")
+		if touch:
+			inp = (inp + touch.move).limit_length(1.0)
+			crouching = crouching or touch.crouch
+			sprint = sprint or touch.run
 	var depth := maxf(0.0, -world.height_at(position.x, position.z))
 	var running := sprint and inp.length() > 0.2 and not crouching and not exhausted
 	var spd := WALK
@@ -165,6 +181,14 @@ func _physics_process(dt: float) -> void:
 	head.position.y = eye + absf(sin(bob)) * amp * minf(hs, 1.0)
 	rotation.y = yaw
 	head.rotation.x = pitch
+	# portrait phones: hold the horizontal view instead of the vertical one
+	var vs := get_viewport().get_visible_rect().size
+	if vs.y > vs.x:
+		cam.keep_aspect = Camera3D.KEEP_WIDTH
+		cam.fov = 78.0
+	else:
+		cam.keep_aspect = Camera3D.KEEP_HEIGHT
+		cam.fov = 72.0
 	cam.rotation.z = sin(bob) * 0.008 + sin(t * 0.7) * 0.006 + sin(t * 1.9) * 0.003
 	cam.rotation.x = sin(t * 0.53) * 0.006 + sin(t * 1.3) * 0.003 * (1.0 + winded * 3.0)
 	cam.rotation.y = sin(t * 0.41) * 0.006

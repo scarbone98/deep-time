@@ -23,6 +23,7 @@ var white := 0.0
 var clock := 0.0
 var tip_time := 0.0
 var tips: Array = []
+var touch_mode := false
 
 
 func _ready() -> void:
@@ -94,6 +95,13 @@ func _ready() -> void:
 	add_child(vhs)
 
 
+## Phone controls sit under the tape shader, like the rest of the OSD.
+func add_touch(pad: Control) -> void:
+	add_child(pad)
+	move_child(pad, 1)
+	touch_mode = true
+
+
 func _label(parent: Control, text: String, size: int, at: Vector2) -> Label:
 	var l := Label.new()
 	l.text = text
@@ -135,6 +143,9 @@ func _process(dt: float) -> void:
 	rec.visible = fmod(Time.get_ticks_msec() / 1000.0, 1.0) < 0.6
 	var s := int(clock)
 	tc.text = "%02d:%02d:%02d" % [s / 3600, (s / 60) % 60, s % 60] + ":%02d" % (int(clock * 30.0) % 30)
+	if touch_mode:  # keep hints clear of the thumbstick
+		var vs := get_viewport().get_visible_rect().size
+		tip.offset_top = -200.0 if vs.y > vs.x else -130.0
 	# tips roll through one by one
 	if not tips.is_empty():
 		tip_time += dt

@@ -24,17 +24,22 @@ var state := "title"
 var state_t := 0.0
 var elapsed := 0.0
 var next_event := 30.0
+var touch := false
 
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	flags = _parse_flags()
+	get_tree().root.size_changed.connect(_fit)
+	_fit()
 	_input_map()
 	sounds = Synth.all()
 	var seed_ := int(flags.get("seed", str(randi() % 1000000)))
 	print("seed ", seed_)
 
+	touch = flags.has("touch") or DisplayServer.is_touchscreen_available()
 	world = World.new()
+	world.lite = touch
 	world.process_mode = Node.PROCESS_MODE_PAUSABLE
 	add_child(world)
 	world.generate(seed_)
@@ -73,6 +78,11 @@ func _ready() -> void:
 
 	hud = Hud.new()
 	add_child(hud)
+	if touch:
+		var pad := TouchPad.new()
+		pad.player = player
+		hud.add_touch(pad)
+		player.touch = pad
 	# field recordings (CC0, see audio/CREDITS.md): frogs and insects over dripping canopy
 	amb = _loop_player("res://audio/frogswamp.ogg", -6.0)
 	rain = _loop_player("res://audio/darkrain.ogg", -15.0)
@@ -84,8 +94,14 @@ func _ready() -> void:
 		_start()
 	else:
 		hud.show_card("DEEP TIME", "LEVEL 1  -  THE COAL FOREST",
-			"307 million years before anyone.\nSomewhere in the fog there is a way through.\n\nIt cannot see you. It feels you move.\n\nWASD move    SHIFT run    C crouch    F lamp",
-			"click to start recording")
+			"307 million years before anyone.\nSomewhere in the fog there is a way through.\n\nIt cannot see you. It feels you move.\n\n" + ("left thumb move (drag past the ring to run)\nright thumb look" if touch else "WASD move    SHIFT run    C crouch    F lamp"),
+			"tap to start recording" if touch else "click to start recording")
+
+
+## Same pixel budget in both orientations: 640x360 landscape, 360x640 portrait.
+func _fit() -> void:
+	var ws := DisplayServer.window_get_size()
+	get_window().content_scale_size = Vector2i(360, 640) if ws.y > ws.x else Vector2i(640, 360)
 
 
 func _loop_player(path: String, db: float) -> AudioStreamPlayer:
@@ -205,10 +221,10 @@ func _start() -> void:
 		mill.begin()
 		for f in flies:
 			f.begin()
-	if not flags.has("play"):
+	if not flags.has("play") and not touch:
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	hud.say([["", 1.5], ["find a way through", 4.0], ["it can't see you.  it feels you move.", 4.5],
-		["SHIFT run   C crouch   F lamp", 5.0]])
+		["the lamp helps.  the flies like it too." if touch else "SHIFT run   C crouch   F lamp", 5.0]])
 
 
 func _on_noise(at: Vector3, radius: float) -> void:
@@ -245,7 +261,7 @@ func _unhandled_input(e: InputEvent) -> void:
 		"title":
 			_start()
 		"play":
-			if Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
+			if not touch and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
 				Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 				get_tree().paused = false
 				hud.paused_label.visible = false
@@ -270,7 +286,7 @@ func _process(dt: float) -> void:
 			hud.static_amt = minf(1.0, (state_t - 0.9) * 3.0)
 		if state_t > 1.9:
 			hud.static_amt = 0.4
-			hud.show_card("SIGNAL LOST", "", "the tape ends at %s" % hud.tc.text, "click to rewind", 0.6)
+			hud.show_card("SIGNAL LOST", "", "the tape ends at %s" % hud.tc.text, "tap to rewind" if touch else "click to rewind", 0.6)
 	elif state == "won":
 		hud.white = minf(1.0, state_t * 0.8)
 		amb.volume_db = -6.0 - state_t * 12.0
@@ -280,7 +296,7 @@ func _process(dt: float) -> void:
 			hud.glitch = 0.0
 			hud.show_card("NOCLIP", "you slipped through the layer",
 				"THE COAL FOREST  -  cleared in %s\n\nnext:  LEVEL 2  -  THE PERMIAN\n(not yet recorded)" % hud.tc.text,
-				"click to go again")
+				"tap to go again" if touch else "click to go again")
 	if flags.has("die") and state == "play" and state_t > 1.0:
 		flags.erase("die")
 		_on_caught()
@@ -291,6 +307,8 @@ func _process(dt: float) -> void:
 
 func _play_tick(dt: float) -> void:
 	elapsed += dt
+	if flags.has("debug") and int(elapsed * 2.0) != int((elapsed - dt) * 2.0):
+		print("pos %.1f,%.1f yaw %.2f" % [player.position.x, player.position.z, player.yaw])
 	hud.clock = elapsed
 	hud.set_battery(player.battery, player.light.visible)
 	var d := Vector2(player.position.x - mill.head_pos().x, player.position.z - mill.head_pos().z).length()
@@ -308,7 +326,7 @@ func _play_tick(dt: float) -> void:
 	if next_event <= 0.0:
 		next_event = randf_range(25.0, 60.0)
 		_distant_event()
-	if not flags.has("play") and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
+	if not flags.has("play") and not touch and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
 		get_tree().paused = true
 		hud.paused_label.visible = true
 

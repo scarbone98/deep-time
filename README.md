@@ -10,7 +10,10 @@ Godot 4.5 (GL Compatibility), GDScript. Built for the web, without threads.
 
 Lethal Company in deep time. You start in the **Chrono Hub**, a little station floating outside time, and walk to the **TIME CONSOLE** to drop into an era.
 
-- **The Bureau's quota.** Bring home the target within 3 drops and the next quota goes up. Miss it and you're fired: credits wiped, hats kept.
+- **A run.** The Chrono Bureau's quota must be met within 3 drops; each quota met raises the next. Hell Creek opens after the first quota. Miss one and you're **fired**: a results screen (drops, quotas met, total hauled, crew lost), then credits and gear are confiscated. Hats are yours to keep.
+- **Conditions.** Every drop has a forecast on the console: clear, pea-soup fog, night, storm (the rain covers your footsteps; lightning doesn't), restless (more hunters, faster) or bountiful (more loot, more guards). Riskier conditions pay more.
+- **Hazards and events.** Tar pits (quicksand in the Permian) swallow you if you stand in them. Herds stampede. In Hell Creek a pack of compies steals any loot left lying around and chirps at you, which the raptors hear.
+- **Tools** (the kiosk's GEAR tab): shovel (click; stuns hunters, makes compies drop things, knocks things out of friends' hands), scanner (R; shows loot values and a creature radar), stun flash (H; 3 charges a drop), walkie-talkie (friends with walkies hear you anywhere), decoys (Q), bigger pockets, long-life battery, rift stabilizer (+1 minute per level for the crew).
 - **Carry it back.** Loot goes into **4 hand slots** (1-4 or the mouse wheel to switch; what you're holding is in your hands, in first person and for your friends).
   - Big eggs take **both hands**: no switching until you put them down.
   - **E** picks up, **G** sets down, **T** throws. Friends catch throws by being in the way, and eggs crack if they fall hard.

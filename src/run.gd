@@ -16,7 +16,7 @@ static var look := {"suit": "0", "hat": "none", "face": "none"}
 static var best := {}
 static var player_name := ""
 static var sens := 1.0  # mouse / thumb look sensitivity
-static var gear := {"pack": 0, "battery": 0}  # permanent upgrades
+static var gear := {"pack": 0, "battery": 0, "shovel": 0, "scanner": 0, "flash": 0, "walkie": 0, "stabilizer": 0}  # lost if you're fired
 static var decoys := 0
 ## The Chrono Bureau's quota: bank the target within three drops, or
 ## you're fired and your credits are wiped (cosmetics stay).
@@ -66,8 +66,8 @@ static func save() -> void:
 ## Your look plus your upgrades: what friends' games and the server need.
 static func net_look() -> Dictionary:
 	var l := look.duplicate()
-	l.pack = gear.pack
-	l.battery = gear.battery
+	for k in gear:
+		l[k] = gear[k]
 	return l
 
 
@@ -130,13 +130,16 @@ static func clock(secs: float) -> String:
 
 
 static func new_quota() -> Dictionary:
-	return {"target": 300, "banked": 0, "left": 3, "round": 1}
+	return {"target": 300, "banked": 0, "left": 3, "round": 1, "days": 0, "total": 0, "deaths": 0, "last": {}}
 
 
-## Count a drop's haul against a quota. Returns "met", "fired" or "".
+## Count a drop's haul against a quota. Returns "met", "fired" or "". When
+## fired, q.last keeps the run's summary for the results screen.
 static func quota_step(q: Dictionary, haul: int) -> String:
 	q.banked = int(q.banked) + haul
 	q.left = int(q.left) - 1
+	q.days = int(q.get("days", 0)) + 1
+	q.total = int(q.get("total", 0)) + haul
 	if int(q.banked) >= int(q.target):
 		q.round = int(q.round) + 1
 		q.target = int(int(q.target) * 1.6 + 100)
@@ -144,12 +147,26 @@ static func quota_step(q: Dictionary, haul: int) -> String:
 		q.left = 3
 		return "met"
 	if int(q.left) <= 0:
+		var last := {"days": q.days, "total": q.total, "deaths": q.get("deaths", 0), "quotas": int(q.round) - 1,
+			"target": q.target, "banked": q.banked}
 		var fresh := new_quota()
 		for k in fresh:
 			q[k] = fresh[k]
+		q.last = last
 		return "fired"
 	return ""
 
 
 static func quota_line(q: Dictionary) -> String:
-	return "QUOTA  %s / %s   %d drop%s left" % [cash(int(q.banked)), cash(int(q.target)), int(q.left), "" if int(q.left) == 1 else "s"]
+	return "QUOTA %d  %s / %s   %d drop%s left" % [int(q.round), cash(int(q.banked)), cash(int(q.target)), int(q.left),
+		"" if int(q.left) == 1 else "s"]
+
+
+## Fired: the Bureau takes back its money and its equipment. Hats are yours.
+static func fired() -> void:
+	money = 0
+	decoys = 0
+	for k in gear:
+		gear[k] = 0
+	save()
+

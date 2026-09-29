@@ -20,6 +20,7 @@ var prowl_speed := 1.6
 var thud_pitch := 0.58
 var gait_rate := 2.4
 var jaw: Node3D
+var stunned := 0.0
 
 var world: World
 var session: Node
@@ -145,7 +146,7 @@ const STATES := ["prowl", "stalk", "charge", "search"]
 
 
 func net_get(out: PackedFloat32Array) -> void:
-	out.append_array([position.x, position.y, position.z, dir.x, dir.z, speed, STATES.find(state) if feeding <= 0.0 else 4])
+	out.append_array([position.x, position.y, position.z, dir.x, dir.z, speed, 5 if stunned > 0.0 else (STATES.find(state) if feeding <= 0.0 else 4)])
 
 
 func net_set(a: PackedFloat32Array, i: int) -> int:
@@ -155,6 +156,9 @@ func net_set(a: PackedFloat32Array, i: int) -> int:
 		dir = d.normalized()
 	speed = a[i + 5]
 	var si := int(a[i + 6])
+	stunned = 1.0 if si == 5 else 0.0
+	if si == 5:
+		si = STATES.find(state)
 	if si == 4 and feeding <= 0.0:
 		_bite()
 	feeding = 1.0 if si == 4 else 0.0
@@ -191,7 +195,12 @@ func _physics_process(dt: float) -> void:
 	if not active:
 		return
 	t += dt
-	if feeding > 0.0:
+	if stunned > 0.0:
+		stunned -= dt
+		want_speed = 0.0
+		speed = move_toward(speed, 0.0, dt * 12.0)
+		seen = 0.0
+	elif feeding > 0.0:
 		feeding -= dt
 		want_speed = 0.0
 		seen = 0.0
@@ -282,6 +291,15 @@ func _look(dt: float) -> void:
 	else:
 		seen = maxf(0.0, seen - dt * (0.06 if state == "charge" else 0.15))
 		lost += dt
+
+
+## A shovel to the head or a flash in the eyes.
+func stun(secs: float) -> void:
+	stunned = maxf(stunned, secs)
+	state = "search"
+	timer = 8.0
+	growl.pitch_scale = 1.4
+	growl.play()
 
 
 ## The kill (on the server) or the lunge (as everyone sees it).

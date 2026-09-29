@@ -73,6 +73,12 @@ var jump_buf := 0.0  # a jump pressed just before landing still counts
 var stam_delay := 0.0  # stamina waits a moment before it comes back
 var bob_amp := 0.0
 var tilt := 0.0
+var sink := 0.0  # 0..1 into a tar pit or quicksand; 1 is gone
+var gear := {}  # tools this player owns
+var swing_cd := 0.0
+var flash_left := 0
+var swing_anim := 0.0
+var shovel_mi: MeshInstance3D
 
 
 func setup(w: World, s: Dictionary, is_view := true) -> void:
@@ -109,6 +115,10 @@ func setup(w: World, s: Dictionary, is_view := true) -> void:
 	cam.add_child(hand)
 	hand_mi = MeshInstance3D.new()
 	hand.add_child(hand_mi)
+	shovel_mi = MeshInstance3D.new()
+	shovel_mi.mesh = Meshes.shovel()
+	shovel_mi.visible = false
+	cam.add_child(shovel_mi)
 	step_sfx = _audio(null, -6.0)
 	breath = _audio(sounds.breath, -80.0)
 	heart = _audio(sounds.heart, -80.0)
@@ -254,6 +264,12 @@ func _tick(dt: float) -> void:
 		spd = RUN
 	spd *= lerpf(1.0, 0.55, clampf(depth / 0.9, 0.0, 1.0))
 	spd *= clampf(1.0 - carry * 0.07, 0.6, 1.0)
+	var in_pit := world.in_pit(position) and alive
+	if in_pit:
+		spd *= 0.3
+		sink = minf(1.0, sink + dt / maxf(2.5, 6.0 - carry * 0.6))
+	else:
+		sink = maxf(0.0, sink - dt / 1.5)
 	# a sprint winds up over a third of a second; slowing down is quicker
 	cur_spd = move_toward(cur_spd, spd, dt * (10.0 if spd > cur_spd else 20.0))
 	if running:
@@ -361,7 +377,7 @@ func _tick(dt: float) -> void:
 		want_amp = 0.014 if crouching else (0.05 if running else 0.028)
 	bob_amp = lerpf(bob_amp, want_amp, 1.0 - exp(-dt * 8.0))
 	land_dip = lerpf(land_dip, 0.0, 1.0 - exp(-dt * 8.0))
-	head.position.y = eye - absf(sin(bob)) * bob_amp * 1.4 + bob_amp * 0.7 - land_dip
+	head.position.y = eye - absf(sin(bob)) * bob_amp * 1.4 + bob_amp * 0.7 - land_dip - sink * 1.35
 	head.position.x = sin(bob) * bob_amp * 0.45
 	rotation.y = yaw
 	head.rotation.x = pitch
@@ -389,6 +405,12 @@ func _tick(dt: float) -> void:
 	# the held item: bobs with your step, dips when you swap or land
 	hand_swap = maxf(0.0, hand_swap - dt)
 	var base := Vector3(0.0, -0.52, -0.62) if hand_two else Vector3(0.3, -0.32, -0.52)
+	swing_anim = maxf(0.0, swing_anim - dt)
+	shovel_mi.visible = view and int(gear.get("shovel", 0)) > 0
+	if shovel_mi.visible:
+		var k := sin(clampf(swing_anim / 0.3, 0.0, 1.0) * PI)
+		shovel_mi.position = Vector3(-0.34 + k * 0.25, -0.34 + absf(sin(bob)) * bob_amp * -0.4, -0.55 - k * 0.2)
+		shovel_mi.rotation = Vector3(-0.3 - k * 1.3, 0.3, 0.25 - k * 0.6)
 	hand.position = base + Vector3(sin(bob) * bob_amp * 0.5 - tilt * 0.4, -absf(sin(bob)) * bob_amp * 0.5 - hand_swap * 1.2 - land_dip * 0.5, 0.0)
 
 
@@ -402,6 +424,8 @@ func _step(depth: float, running: bool) -> void:
 	if wet:
 		r *= 1.5
 	r *= 1.0 + carry * 0.12
+	if sink > 0.0:
+		r *= 2.0
 	noise.emit(global_position, r)
 	if not view:
 		return

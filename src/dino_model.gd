@@ -10,10 +10,14 @@ const LOOKS := {
 	"Velociraptor": {"LightBrown": Color(0.52, 0.42, 0.3), "Brown": Color(0.16, 0.12, 0.1), "eyes": Color(1.0, 0.78, 0.15)},
 	"TRex": {"LightYellow": Color(0.45, 0.38, 0.28), "LightGreen": Color(0.26, 0.24, 0.18), "Green": Color(0.12, 0.11, 0.09),
 		"Red": Color(0.35, 0.08, 0.08), "eyes": Color(1.0, 0.45, 0.1)},
+	"Compy": {"LightBrown": Color(0.45, 0.55, 0.3), "Brown": Color(0.2, 0.28, 0.12), "eyes": Color(1.0, 0.9, 0.3)},
+	"Parasaurolophus": {"LightYellow": Color(0.62, 0.58, 0.44), "Green": Color(0.22, 0.3, 0.2), "LightGreen": Color(0.4, 0.46, 0.32),
+		"Red": Color(0.62, 0.25, 0.15)},
 	"Triceratops": {"LightBrown": Color(0.62, 0.55, 0.42), "Purple": Color(0.3, 0.26, 0.3), "Brown": Color(0.36, 0.28, 0.2)},
 }
 
 var kind := ""
+var look_as := ""
 var ap: AnimationPlayer
 var cur := ""
 var locked := 0.0  # a one-shot (attack) is playing
@@ -21,8 +25,9 @@ static var probe := false
 static var no_recolour := false
 
 
-func setup(k: String, size: float) -> void:
+func setup(k: String, size: float, look_key := "") -> void:
 	kind = k
+	look_as = look_key if look_key != "" else k
 	var scene: PackedScene = load("res://assets/dinos/%s.glb" % k)
 	var inst: Node3D = scene.instantiate()
 	inst.rotation.y = PI  # the models face +Z; ours face -Z
@@ -48,7 +53,7 @@ const EYES := {
 
 ## Two glowing eyes riding the skull: what your lamp catches first.
 func _eyes(inst: Node) -> void:
-	var look: Dictionary = LOOKS.get(kind, {})
+	var look: Dictionary = LOOKS.get(look_as, {})
 	if not EYES.has(kind) or not look.has("eyes"):
 		return
 	var sk: Skeleton3D = inst.find_children("*", "Skeleton3D", true, false)[0]
@@ -79,7 +84,7 @@ func _full(a: String) -> String:
 
 
 func _recolour(inst: Node) -> void:
-	var look: Dictionary = LOOKS.get(kind, {})
+	var look: Dictionary = LOOKS.get(look_as, {})
 	for mi: MeshInstance3D in inst.find_children("*", "MeshInstance3D", true, false):
 		for s in mi.mesh.get_surface_count():
 			var src := mi.mesh.surface_get_material(s)

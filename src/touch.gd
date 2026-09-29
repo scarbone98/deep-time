@@ -12,6 +12,7 @@ signal use
 signal drop
 signal decoy
 signal throw
+signal tool(name: String)
 signal swap
 
 var player: Player
@@ -20,6 +21,7 @@ var emotes_open := false
 var use_label := ""
 var can_drop := false
 var decoys := 0
+var tools: Array = []
 var jump := false
 var move := Vector2.ZERO
 var run := false
@@ -53,6 +55,8 @@ func _buttons() -> Dictionary:
 		b["swap"] = Vector2(s.x - 210, s.y - 350)
 	if decoys > 0:
 		b["decoy"] = Vector2(s.x - 136, s.y - 270)
+	for k in tools.size():
+		b["t_" + str(tools[k])] = Vector2(s.x - 284, s.y - 110 - 80 * k)
 	if coop:
 		b["mic"] = Vector2(s.x - 136, s.y - 110)
 		b["emote"] = Vector2(s.x - 136, s.y - 190)
@@ -77,6 +81,8 @@ func _input(e: InputEvent) -> void:
 				player.toggle_light()
 			elif hit == "crouch":
 				crouch = not crouch
+			elif hit.begins_with("t_"):
+				tool.emit(hit.substr(2))
 			elif hit == "throw":
 				throw.emit()
 			elif hit == "swap":
@@ -144,6 +150,8 @@ func _draw() -> void:
 	if b.has("swap"):
 		_button(b.swap, "SWAP", false)
 	_button(b.jump, "JUMP", false)
+	for k in tools:
+		_button(b["t_" + str(k)], str(k).to_upper(), false)
 	if b.has("decoy"):
 		_button(b.decoy, "DECOY %d" % decoys, false)
 	if coop:

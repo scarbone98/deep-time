@@ -5,6 +5,36 @@ extends RefCounted
 const COUNT := 3  # eras you can drop into; the hub is level 0
 
 
+## Eras open up as the run goes on: Hell Creek waits for your first quota.
+static func unlocked(n: int, q: Dictionary) -> bool:
+	return n - 1 <= int(q.get("round", 1))
+
+
+## Every drop comes with conditions, forecast on the console. They depend
+## only on the era and where the run is, so every machine agrees.
+const CONDITIONS := [
+	{"id": "clear", "name": "CLEAR", "about": "nothing out of the ordinary", "mult": 1.0, "w": 3},
+	{"id": "fog", "name": "PEA-SOUP FOG", "about": "you'll hear it before you see it", "mult": 1.2, "w": 2},
+	{"id": "night", "name": "NIGHT", "about": "bring the lamp", "mult": 1.3, "w": 2},
+	{"id": "storm", "name": "STORM", "about": "rain drowns out your footsteps. lightning doesn't", "mult": 1.25, "w": 2},
+	{"id": "restless", "name": "RESTLESS", "about": "the hunters are awake, and there are more of them", "mult": 1.5, "w": 1},
+	{"id": "bountiful", "name": "BOUNTIFUL", "about": "more to find, and more things guarding it", "mult": 1.0, "w": 1},
+]
+
+
+static func condition(n: int, q: Dictionary) -> Dictionary:
+	var h := hash([n, int(q.get("round", 1)), int(q.get("left", 3)), int(q.get("days", 0))])
+	var total := 0
+	for c in CONDITIONS:
+		total += int(c.w)
+	var pick := absi(h) % total
+	for c in CONDITIONS:
+		pick -= int(c.w)
+		if pick < 0:
+			return c
+	return CONDITIONS[0]
+
+
 static func get_era(n: int) -> Dictionary:
 	if n == 0:
 		return hub()

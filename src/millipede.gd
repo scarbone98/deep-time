@@ -16,6 +16,7 @@ var session: Node
 var player: Player
 var puppet := false
 var feeding := 0.0
+var stunned := 0.0
 var net_head := Vector3.ZERO
 var pos: Array[Vector3] = []
 var nodes: Array[Node3D] = []
@@ -113,7 +114,7 @@ const STATES := ["roam", "investigate", "search", "hunt"]
 
 
 func net_get(out: PackedFloat32Array) -> void:
-	out.append_array([pos[0].x, pos[0].y, pos[0].z, dir.x, dir.z, speed, STATES.find(state), rear])
+	out.append_array([pos[0].x, pos[0].y, pos[0].z, dir.x, dir.z, speed, 4 if stunned > 0.0 else STATES.find(state), rear])
 
 
 func net_set(a: PackedFloat32Array, i: int) -> int:
@@ -122,7 +123,7 @@ func net_set(a: PackedFloat32Array, i: int) -> int:
 	if d.length() > 0.01:
 		dir = d.normalized()
 	speed = a[i + 5]
-	var st: String = STATES[clampi(int(a[i + 6]), 0, 3)]
+	var st: String = STATES[clampi(int(a[i + 6]), 0, 3)] if int(a[i + 6]) < 4 else state
 	if st == "hunt" and state != "hunt":
 		hiss.play()
 	state = st
@@ -150,12 +151,15 @@ func _physics_process(dt: float) -> void:
 		return
 	t += dt
 	player = session.nearest_player(pos[0])
-	if feeding > 0.0:
+	if stunned > 0.0:
+		stunned -= dt
+		want_speed = 0.0
+	elif feeding > 0.0:
 		feeding -= dt
 		want_speed = 0.0
 	if player == null:
 		want_speed = 0.0
-	else:
+	elif stunned <= 0.0:
 		_think(dt)
 	var p0 := pos[0]
 	var to := target - p0
@@ -304,6 +308,14 @@ func _pick_roam() -> void:
 	target.z = clampf(target.z, -lim, lim)
 
 
+## A shovel or a flash: it curls up for a moment.
+func stun(secs: float) -> void:
+	stunned = maxf(stunned, secs)
+	_search(pos[0])
+	hiss.pitch_scale = 1.5
+	hiss.play()
+
+
 ## Its nest was robbed: it knows exactly where.
 func alarm(at: Vector3) -> void:
 	if active and feeding <= 0.0 and not hear_off:
@@ -312,7 +324,7 @@ func alarm(at: Vector3) -> void:
 
 
 func hear(at: Vector3, radius: float) -> void:
-	if not active or hear_off or feeding > 0.0:
+	if not active or hear_off or feeding > 0.0 or stunned > 0.0:
 		return
 	var d := _dist2(at, pos[0])
 	if d > radius:

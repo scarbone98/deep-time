@@ -1373,3 +1373,13 @@ static func magnolia(rng: RandomNumberGenerator) -> ArrayMesh:
 		var p := Vector3(cos(a) * 0.9, rng.randf_range(0.8, 1.9), sin(a) * 0.9)
 		octa(st, p, 0.14, Color(1.0, 0.8, 0.88) if k % 2 == 0 else Color(0.98, 0.95, 0.9))
 	return finish(st, veg())
+
+
+static func shovel() -> ArrayMesh:
+	var st := _smooth()
+	var wood := Color(0.55, 0.38, 0.22)
+	var steel := Color(0.55, 0.57, 0.6)
+	tube(st, [Vector3(0, -0.45, 0), Vector3(0, 0.35, 0)], [0.022, 0.022], [wood, wood.lightened(0.1)], 6)
+	box(st, Vector3(-0.07, 0.35, -0.015), Vector3(0.07, 0.38, 0.015), Color(0.2, 0.2, 0.22))
+	box(st, Vector3(-0.1, -0.72, -0.012), Vector3(0.1, -0.45, 0.012), steel)
+	return finish(st, _smooth_mat())

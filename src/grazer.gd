@@ -113,11 +113,20 @@ func _physics_process(dt: float) -> void:
 	var to := goal - position
 	to.y = 0.0
 	var want_speed := clampf(to.length() * 0.3, 0.0, 1.1)
+	# a stampede: the whole herd charges one way, flattening whoever's there
+	if float(herd.get("dash_t", 0.0)) > 0.0:
+		to = herd.dash
+		want_speed = 8.5
+		var main: Node = herd.get("main")
+		if main:
+			for p: Player in main.alive_players():
+				if Vector2(p.position.x - position.x, p.position.z - position.z).length() < 2.2 * scale.x:
+					main._kill(p, position + Vector3(0, 1.0, 0))
 	if to.length() > 0.5:
 		var nd := dir.lerp(to.normalized(), 1.0 - exp(-dt * 0.8))
 		if nd.length() > 0.01:
 			dir = nd.normalized()
-	speed = move_toward(speed, want_speed, dt)
+	speed = move_toward(speed, want_speed, dt * (6.0 if want_speed > 5.0 else 1.0))
 	position += dir * speed * dt
 	position.y = world.height_at(position.x, position.z)
 	rotation.y = atan2(-dir.x, -dir.z)

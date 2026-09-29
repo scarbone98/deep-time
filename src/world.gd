@@ -41,6 +41,7 @@ var outpost_at := Vector3.ZERO
 var camp_spots: Array = []  # where earlier crews camped
 var keepout: Array = []  # [Vector3, radius]: no trees here
 var blockers: Array = []  # extra bodies that block sight
+var pits: Array = []  # [Vector3 centre, radius]: tar pits, or quicksand in the Permian
 
 
 func generate(seed_: int, era_id: String) -> void:
@@ -1061,6 +1062,20 @@ func _plan_structures() -> void:
 			camp_spots.append(p)
 			keepout.append([p, 5.0])
 			break
+	for k in 7:
+		for tries in 80:
+			var a := rng.randf() * TAU
+			var p := exit_pos + Vector3(cos(a), 0, sin(a)) * rng.randf_range(22.0, 115.0)
+			if absf(p.x) > BOUND - 12.0 or absf(p.z) > BOUND - 12.0 or height_at(p.x, p.z) < 0.15:
+				continue
+			if keepout.any(func(ko: Array) -> bool: return (ko[0] as Vector3).distance_to(p) < float(ko[1]) + 6.0):
+				continue
+			var r := rng.randf_range(2.8, 5.0)
+			p.y = height_at(p.x, p.z) - 0.12
+			_level(p, r * 0.8, r + 1.5, p.y)
+			pits.append([p, r])
+			keepout.append([p, r + 1.0])
+			break
 
 
 func _level(c: Vector3, inner: float, outer: float, to: float) -> void:
@@ -1092,6 +1107,8 @@ func _build_structures() -> void:
 	add_child(sign)
 	for c in camp_spots:
 		_camp(c)
+	for pt in pits:
+		_pit(pt[0], pt[1])
 
 
 ## What's left of a crew: a collapsed tent, crates, a dead lantern, and
@@ -1146,3 +1163,41 @@ func _camp(c: Vector3) -> void:
 	cs.rotation.y = node.rotation.y
 	_colliders.add_child(cs)
 	_add_trunk(c.x, c.z, 1.5, false)
+
+
+func in_pit(p: Vector3) -> bool:
+	for pt in pits:
+		var c: Vector3 = pt[0]
+		if Vector2(p.x - c.x, p.z - c.z).length() < float(pt[1]):
+			return true
+	return false
+
+
+## A tar seep (or, in the Permian, quicksand): a glossy disc that swallows
+## anything that stands in it, with a few bones poking out as a warning.
+func _pit(c: Vector3, r: float) -> void:
+	var sand := era == "permian"
+	var m := StandardMaterial3D.new()
+	m.albedo_color = Color(0.55, 0.38, 0.24) if sand else Color(0.02, 0.018, 0.015)
+	m.roughness = 0.85 if sand else 0.05
+	m.metallic_specular = 0.2 if sand else 1.0
+	var cyl := CylinderMesh.new()
+	cyl.top_radius = r
+	cyl.bottom_radius = r
+	cyl.height = 0.05
+	cyl.radial_segments = 24
+	cyl.material = m
+	var mi := MeshInstance3D.new()
+	mi.mesh = cyl
+	mi.position = c + Vector3(0, 0.1, 0)
+	add_child(mi)
+	var st := Meshes.begin()
+	var bone := Color(0.78, 0.72, 0.6)
+	for k in rng.randi_range(2, 4):
+		var a := rng.randf() * TAU
+		var o := Vector3(cos(a), 0, sin(a)) * rng.randf_range(0.3, r * 0.8)
+		Meshes.tube(st, [o, o + Vector3(rng.randf_range(-0.3, 0.3), rng.randf_range(0.5, 1.1), rng.randf_range(-0.3, 0.3))], [0.07, 0.03], [bone.darkened(0.4), bone], 5)
+	var bones := MeshInstance3D.new()
+	bones.mesh = Meshes.finish(st, Meshes.veg())
+	bones.position = c + Vector3(0, 0.05, 0)
+	add_child(bones)

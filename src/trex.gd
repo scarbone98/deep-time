@@ -61,8 +61,8 @@ func _pose() -> void:
 	rotation.y = atan2(-dir.x, -dir.z)
 	if model == null:
 		return
-	if feeding > 0.0:
-		model.play("Idle", 1.0)
+	if feeding > 0.0 or stunned > 0.0:
+		model.play("Idle", 0.4 if stunned > 0.0 else 1.0)
 		return
 	model.move(speed, 2.0, 6.5)
 

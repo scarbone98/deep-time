@@ -17,7 +17,7 @@ signal snapshot(data: PackedFloat32Array)
 signal event(ev: Array)
 signal left
 
-const VERSION := 5
+const VERSION := 6
 const MAX_PLAYERS := 4
 const DEFAULT_URL := "wss://deep-time-coop.fly.dev"
 const CODE_ALPHABET := "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
@@ -181,7 +181,8 @@ func s_room(room_code: String, host: int, mem: Dictionary, ph: String, lvl: int,
 
 
 @rpc("authority", "call_remote", "reliable")
-func s_level(lvl: int, sd: int, mem: Dictionary) -> void:
+func s_level(lvl: int, sd: int, mem: Dictionary, q: Dictionary) -> void:
+	quota = q
 	level = lvl
 	seed_ = sd
 	members = mem
@@ -279,7 +280,7 @@ func c_hello(version: int, pname: String, room_code: String, create: bool, look:
 		_begin_level(room, 0)  # a new room opens on the hub
 	else:
 		# drop in on whatever's running
-		s_level.rpc_id(id, room.level, room.seed, _roster(room))
+		s_level.rpc_id(id, room.level, room.seed, _roster(room), room.quota)
 
 
 @rpc("any_peer", "call_remote", "reliable")
@@ -288,7 +289,10 @@ func c_start(lvl: int) -> void:
 	var room: Dictionary = rooms.get(peer_room.get(id, ""), {})
 	if room.is_empty() or room.host != id or room.level != 0 or room.phase != "play":
 		return
-	_begin_level(room, clampi(lvl, 1, Eras.COUNT))
+	lvl = clampi(lvl, 1, Eras.COUNT)
+	if not Eras.unlocked(lvl, room.quota):
+		return
+	_begin_level(room, lvl)
 
 
 @rpc("any_peer", "call_remote", "reliable")
@@ -331,7 +335,7 @@ func _begin_level(room: Dictionary, lvl: int) -> void:
 	room.vp = vp
 	room.session = s
 	for id in room.members:
-		s_level.rpc_id(id, lvl, room.seed, _roster(room))
+		s_level.rpc_id(id, lvl, room.seed, _roster(room), room.quota)
 	_push_room(room)
 	print("room %s: level %d seed %d" % [room.code, lvl, room.seed])
 
@@ -409,7 +413,7 @@ func room_event_to(id: int, ev: Array) -> void:
 func room_over(room: Dictionary, haul: int) -> void:
 	var result := Run.quota_step(room.quota, haul)
 	var q: Dictionary = room.quota
-	room_event(room, ["quota", q.target, q.banked, q.left, q.round, result])
+	room_event(room, ["quota", q, result])
 	room.phase = "card"
 	room.t = 0.0
 	room.next = 0  # home to the hub

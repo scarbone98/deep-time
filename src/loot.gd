@@ -21,6 +21,7 @@ var cracked := false
 var two_handed := false  # takes both hands: no switching until you put it down
 var taken := false  # a nest egg only enrages its parent once
 var fall_speed := 0.0
+var claimed_by := -1  # a compy has its eye on it
 var state := GROUND
 var holder := 0
 var thrower := 0
@@ -34,6 +35,7 @@ var glint_mat: StandardMaterial3D
 var tag: Label3D
 var t := 0.0
 var targeted := false
+var scan_t := 0.0
 
 static var _glint_tex: GradientTexture2D
 
@@ -152,7 +154,8 @@ func _physics_process(dt: float) -> void:
 
 func _process(dt: float) -> void:
 	t += dt
-	tag.visible = targeted and state == GROUND
+	scan_t = maxf(0.0, scan_t - dt)
+	tag.visible = (targeted or scan_t > 0.0) and state == GROUND
 	if state != GROUND:
 		glint_mat.albedo_color.a = 0.0
 		return

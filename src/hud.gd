@@ -40,6 +40,8 @@ var stamina := 1.0
 var winded := false
 var stam_show := 0.0
 var stam_bar: Control
+var radar: Control
+var blips: Array = []
 var stage_box: HBoxContainer
 var menu_box: VBoxContainer
 var menu_fields := {}
@@ -101,6 +103,11 @@ func _ready() -> void:
 	stam_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	stam_bar.draw.connect(_draw_stamina)
 	osd.add_child(stam_bar)
+	radar = Control.new()
+	radar.set_anchors_preset(Control.PRESET_FULL_RECT)
+	radar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	radar.draw.connect(_draw_radar)
+	osd.add_child(radar)
 	hotbar = Control.new()
 	hotbar.set_anchors_preset(Control.PRESET_FULL_RECT)
 	hotbar.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -307,6 +314,27 @@ func _draw_stamina() -> void:
 	stam_bar.draw_rect(r.grow(1.0), Color(0, 0, 0, 0.5 * a))
 	var col := Color(0.95, 0.4, 0.3, a) if winded else Color(0.95, 0.9, 0.75, 0.9 * a)
 	stam_bar.draw_rect(Rect2(r.position, Vector2(r.size.x * clampf(stamina, 0.0, 1.0), r.size.y)), col)
+
+
+func set_radar(b: Array) -> void:
+	blips = b
+	radar.queue_redraw()
+
+
+## The scanner's sweep: you at the centre, facing up.
+func _draw_radar() -> void:
+	if blips.is_empty():
+		return
+	var vs := radar.get_rect().size
+	var c := Vector2(vs.x - 80, 120)
+	var r := 55.0
+	radar.draw_circle(c, r, Color(0.0, 0.1, 0.05, 0.55))
+	radar.draw_arc(c, r, 0, TAU, 32, Color(0.3, 1.0, 0.5, 0.6), 1.5)
+	radar.draw_arc(c, r * 0.5, 0, TAU, 32, Color(0.3, 1.0, 0.5, 0.25), 1.0)
+	radar.draw_circle(c, 3, Color(1, 1, 1))
+	for b in blips:
+		var p: Vector2 = b[0]
+		radar.draw_circle(c + Vector2(p.x, p.y) * r, 3.5, b[1])
 
 
 func set_slots(names: Array, held: int, two: bool) -> void:

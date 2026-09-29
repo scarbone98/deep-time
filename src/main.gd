@@ -99,6 +99,14 @@ var banked_flash := 0.0
 var jumped_since_send := false
 var home_value := 0  # carried home through the door this drop
 var outpost_tripped := false
+var cond: Dictionary = {}  # this drop's conditions (eras.gd)
+var herds: Array = []
+var compys: Array[Compy] = []
+var rift_len := RIFT_TIME
+var scan_cd := 0.0
+var scan_t := 0.0
+var next_stampede := 0.0
+var lightning := 0.0
 var quota_msg := ""
 
 
@@ -128,6 +136,9 @@ func _ready() -> void:
 	Run.load_save()
 	if flags.has("money"):
 		Run.money = int(flags.money)
+	if flags.has("gear"):  # dev: every tool
+		for k in Run.gear:
+			Run.gear[k] = 1
 	Net.level_start.connect(func() -> void: get_tree().reload_current_scene())
 	if Net.online and Net.in_level:
 		mode = "client"
@@ -147,6 +158,8 @@ func _ready() -> void:
 	DinoModel.no_recolour = flags.has("norecolour")
 	era = Eras.get_era(level)
 	hub = level == 0
+	cond = {} if hub else Eras.condition(level, _quota())
+	era = _conditioned(era)
 	sounds = Synth.all()
 	touch = flags.has("touch") or DisplayServer.is_touchscreen_available()
 	_build(true)
@@ -176,6 +189,7 @@ func _ready() -> void:
 		pad.throw.connect(func() -> void: _drop(true))
 		pad.swap.connect(func() -> void: _hold((local.held + 1) % local.slots.size()))
 		pad.decoy.connect(_throw_decoy)
+		pad.tool.connect(_tool)
 		hud.add_touch(pad)
 		local.touch = pad
 	shop_ui = ShopUI.new()
@@ -189,7 +203,7 @@ func _ready() -> void:
 	if hub:
 		amb.stream = Synth.hub_music()
 		amb.volume_db = -8.0
-	hud.date.text = era.date
+	hud.date.text = era.date + (("   " + str(cond.name)) if not cond.is_empty() and cond.id != "clear" else "")
 	sfx = AudioStreamPlayer.new()
 	add_child(sfx)
 	_update_list()
@@ -217,6 +231,8 @@ func _ready() -> void:
 func _ready_server() -> void:
 	era = Eras.get_era(level)
 	hub = level == 0
+	cond = {} if hub else Eras.condition(level, net_room.quota)
+	era = _conditioned(era)
 	sounds = Synth.all()
 	_build(false)
 	state = "wait"
@@ -262,10 +278,32 @@ func _build(view: bool) -> void:
 	netted.append_array(scorps)
 	netted.append_array(grazers)
 	netted.append_array(dicys)
+	netted.append_array(compys)
 	if mode == "client":
 		for c in netted:
 			c.puppet = true
+	# restless and bountiful drops start with a second hunter already out
+	if cond.get("id", "") in ["restless", "bountiful"]:
+		var r2 := RandomNumberGenerator.new()
+		r2.seed = seed_ + 4242
+		hunter2 = true
+		_spawn_hunter(_creature_start(r2, 70.0, 110.0), Vector3.FORWARD)
+	if cond.get("id", "") == "restless":
+		for m in hunters:
+			m.hunt_speed += 0.8
+			m.drift = minf(0.9, m.drift + 0.25)
 	_place_loot(mstart)
+	# the crew's best rift stabilizer holds the rift open longer
+	var stab := 0
+	if mode == "server":
+		for m in net_room.members.values():
+			stab = maxi(stab, int(m.get("look", {}).get("stabilizer", 0)))
+	elif mode == "client":
+		for m in Net.members.values():
+			stab = maxi(stab, int(m.get("look", {}).get("stabilizer", 0)))
+	else:
+		stab = int(Run.gear.get("stabilizer", 0))
+	rift_len = RIFT_TIME + 60.0 * stab
 
 
 ## Eggs in nests by the hunter's lair (and the herds), spawn by the pools,
@@ -279,8 +317,13 @@ func _place_loot(lair: Vector3) -> void:
 		if nests.size() < 3 and c.distance_to(nests[-1]) > 20.0:
 			nests.append(c)
 	var pools := world.pools(4) if era.id == "carboniferous" else []
-	for info in era.loot:
-		for k in int(info.count):
+	for base_info in era.loot:
+		var info: Dictionary = (base_info as Dictionary).duplicate()
+		var count := int(info.count)
+		if cond.get("id", "") == "bountiful":
+			count = int(ceil(count * 1.5))
+		info.value = int(round(float(info.value) * float(cond.get("mult", 1.0)) / 5.0) * 5.0)
+		for k in count:
 			var at := Vector3.ZERO
 			match str(info.where):
 				"nest":
@@ -328,6 +371,26 @@ func _place_loot(lair: Vector3) -> void:
 			add_child(l)
 			l.setup(loot.size(), info, at, world)
 			loot.append(l)
+
+
+## The era as today's conditions leave it.
+func _conditioned(e: Dictionary) -> Dictionary:
+	if cond.is_empty():
+		return e
+	e = e.duplicate(true)
+	match str(cond.id):
+		"fog":
+			e.fog_density = float(e.fog_density) * 2.3
+		"night":
+			e.fog = (e.fog as Color) * 0.3
+			e.ambient_energy = float(e.ambient_energy) * 0.35
+			e.sun_energy = float(e.sun_energy) * 0.08
+		"storm":
+			e.fog = (e.fog as Color).darkened(0.35)
+			e.fog_density = float(e.fog_density) * 1.4
+			e.sun_energy = float(e.sun_energy) * 0.4
+			e.loops = [e.loops[0], ["res://audio/darkrain.ogg", -4.0]]
+	return e
 
 
 func _authority() -> bool:
@@ -394,7 +457,8 @@ func _populate_permian(rng: RandomNumberGenerator) -> void:
 	var sm := Meshes.scutosaurus()
 	for h in 3:
 		var c := _creature_start(rng, 35.0, 90.0)
-		var herd := {"center": c}
+		var herd := {"center": c, "main": self}
+		herds.append(herd)
 		if _authority():
 			var goal := _ring(c, 20.0, 50.0)
 			var tw := create_tween().set_loops()
@@ -424,10 +488,13 @@ func _populate_cretaceous(rng: RandomNumberGenerator, lair: Vector3) -> void:
 	# the rex, further out
 	var rx := _creature_start(rng, 85.0, 120.0)
 	_spawn_hunter(rx, (world.spawn - rx).normalized(), "rex")
+	_add_compys(rng)
 	var tm := {"model": "Triceratops", "size": 0.3}
-	for h in 2:
+	var pm := {"model": "Parasaurolophus", "size": 0.3}
+	for h in 3:
 		var c := _creature_start(rng, 40.0, 90.0)
-		var herd := {"center": c}
+		var herd := {"center": c, "main": self}
+		herds.append(herd)
 		if _authority():
 			var goal := _ring(c, 20.0, 40.0)
 			var tw := create_tween().set_loops()
@@ -437,8 +504,57 @@ func _populate_cretaceous(rng: RandomNumberGenerator, lair: Vector3) -> void:
 			var g := Grazer.new()
 			g.process_mode = Node.PROCESS_MODE_PAUSABLE
 			add_child(g)
-			g.setup(world, herd, sounds, tm)
+			g.setup(world, herd, sounds, tm if h < 2 else pm)
 			grazers.append(g)
+
+
+func _add_compys(rng: RandomNumberGenerator) -> void:
+	var hoard := world.dry_point(rng, 0.2, 35.0, 90.0)
+	for k in 4:
+		var c := Compy.new()
+		c.process_mode = Node.PROCESS_MODE_PAUSABLE
+		add_child(c)
+		var at := hoard + Vector3(rng.randf_range(-3, 3), 0, rng.randf_range(-3, 3))
+		at.y = world.height_at(at.x, at.z)
+		c.setup(world, self, sounds, at, k, hoard)
+		compys.append(c)
+
+
+## The compies' side of the rules (authority only).
+func compy_find(c: Compy) -> Loot:
+	var best: Loot = null
+	var bd := 30.0
+	for l in loot:
+		if not l.on_ground() or l.claimed_by >= 0 and l.claimed_by != c.idx:
+			continue
+		if exit_node and exit_node.pad_has(l.position):
+			continue
+		var d := l.position.distance_to(c.position)
+		if d < bd:
+			bd = d
+			best = l
+	if best:
+		best.claimed_by = c.idx
+	return best
+
+
+func compy_take(c: Compy, l: Loot) -> bool:
+	if not l.on_ground():
+		return false
+	l.set_state(Loot.CARRIED, -100 - c.idx)
+	_emit(["cpick", l.idx])
+	return true
+
+
+func compy_drop(c: Compy, i: int, at: Vector3) -> void:
+	loot[i].claimed_by = -1
+	loot[i].set_state(Loot.GROUND, 0, at)
+	_emit(["drop", -1, i, at.x, at.y, at.z])
+
+
+func compy_chirp(c: Compy) -> void:
+	_on_noise(c.position, 16.0)
+	_emit(["chirp", c.idx])
 
 
 func _spawn_hunter(at: Vector3, facing: Vector3, kind := "") -> Node3D:
@@ -573,6 +689,7 @@ func _input_map() -> void:
 	var m := {
 		"fwd": [KEY_W, KEY_UP], "back": [KEY_S, KEY_DOWN], "left": [KEY_A, KEY_LEFT], "right": [KEY_D, KEY_RIGHT],
 		"sprint": [KEY_SHIFT], "crouch": [KEY_C], "light": [KEY_F], "use": [KEY_E], "drop": [KEY_G], "jump": [KEY_SPACE], "decoy": [KEY_Q],
+		"scan": [KEY_R], "stun": [KEY_H],
 		"sens_down": [KEY_BRACKETLEFT], "sens_up": [KEY_BRACKETRIGHT],
 		"slot1": [KEY_1], "slot2": [KEY_2], "slot3": [KEY_3], "slot4": [KEY_4], "slot5": [KEY_5], "slot6": [KEY_6],
 		"throw": [KEY_T], "emote1": [KEY_Z], "emote2": [KEY_X], "emote3": [KEY_V], "emote4": [KEY_B], "mute": [KEY_M],
@@ -659,6 +776,17 @@ func _apply_dev_flags() -> void:
 		p.y = world.height_at(p.x, p.z)
 		local.position = p
 		local.yaw = o.rotation.y
+	if flags.has("pit") and not world.pits.is_empty():  # dev: at the edge of a pit
+		var c: Vector3 = world.pits[0][0]
+		local.position = c + Vector3(0, 0, float(world.pits[0][1]) + 3.0)
+		local.position.y = world.height_at(local.position.x, local.position.z)
+		local.yaw = 0.0
+	if flags.has("compy") and not compys.is_empty():
+		local.position = compys[0].position + Vector3(0, 0, 5)
+		local.position.y = world.height_at(local.position.x, local.position.z)
+		local.yaw = 0.0
+	if flags.has("stampede"):
+		next_stampede = 3.0
 	if flags.has("camp") and not world.camp_spots.is_empty():
 		var c: Vector3 = world.camp_spots[0]
 		local.position = c + Vector3(0, 0, 7)
@@ -668,8 +796,8 @@ func _apply_dev_flags() -> void:
 		local.position = exit_node.to_global(Vector3(0.8, 0, 2.5))
 		local.yaw = world.exit_yaw + PI
 	if flags.has("rift"):  # dev: seconds left on the rift
-		elapsed = RIFT_TIME - float(flags.rift)
-		strain_sent = 1 if float(flags.rift) < RIFT_TIME * 0.5 else 0
+		elapsed = rift_len - float(flags.rift)
+		strain_sent = 1 if float(flags.rift) < rift_len * 0.5 else 0
 	if flags.has("give"):  # dev: start carrying these (comma list)
 		for i in str(flags.give).split(","):
 			var l := loot[clampi(int(i), 0, loot.size() - 1)]
@@ -724,15 +852,17 @@ func _close_ui() -> void:
 func _console() -> void:
 	_open("console")
 	var host := mode == "solo" or Net.host_id == Net.my_id
-	hud.show_card("TIME CONSOLE", ("ROOM  %s  -  " % Net.code if mode == "client" else "") + "where to?", "", "", 0.88)
+	var q := _quota()
+	hud.show_card("TIME CONSOLE", ("ROOM  %s  -  " % Net.code if mode == "client" else "") + Run.quota_line(q) + "   -   day %d" % (int(q.get("days", 0)) + 1), "", "", 0.88)
 	var items := []
-	# one row per era: the drop button, then a one-line pitch
+	# one row per era: the drop button, the era, and today's forecast there
 	for n in range(1, Eras.COUNT + 1):
 		var e := Eras.get_era(n)
-		var best := ("  (best " + Run.cash(int(Run.best[n])) + ")") if Run.best.has(n) else ""
-		var line := "%s%s  -  %s" % [e.title, best, String(e.blurb).split("\n")[0]]
+		var open := Eras.unlocked(n, q)
+		var c := Eras.condition(n, q)
+		var line := "%s   -   %s" % [e.title, (str(c.name) + ("  x%.2f" % float(c.mult) if float(c.mult) != 1.0 else "") + "  (" + str(c.about) + ")") if open else "LOCKED  -  meet quota %d to open" % (n - 1)]
 		var row := [{"type": "label", "text": line}]
-		if host:
+		if host and open:
 			row.push_front({"type": "button", "text": "DROP IN", "cb": _drop_into.bind(n), "width": 90})
 		items.append({"type": "row", "items": row})
 	if not host:
@@ -853,7 +983,7 @@ func _start() -> void:
 			Run.last_haul = -1
 		tips.append(["the TIME CONSOLE drops you in.  the SHOP sells hats.", 5.0])
 	else:
-		tips = [["", 1.0], ["the rift stays open for 7 minutes.", 3.5],
+		tips = [["", 1.0], ["%s  -  %s" % [cond.get("name", "CLEAR"), cond.get("about", "")], 4.0], ["the rift stays open for 7 minutes.", 3.5],
 			["carry loot back and set it down on the rift's carpet.  it all comes home with you.", 5.5],
 			["eggs are worth the most.  their parents disagree.", 4.0], [era.tip, 4.0],
 			["E grab   G drop   T throw   1-4 / wheel switch hands   Q decoy" if not touch else "GRAB it.  DROP it on the rift's carpet.", 5.0]]
@@ -902,6 +1032,8 @@ func add_net_player(id: int, info: Dictionary) -> void:
 
 
 func _gear_up(p: Player, look: Dictionary) -> void:
+	p.gear = look.duplicate()
+	p.flash_left = 3 if int(look.get("flash", 0)) > 0 else 0
 	p.set_slot_count(4 + int(look.get("pack", 0)))
 	p.battery_life = 300.0 * (2.0 if int(look.get("battery", 0)) > 0 else 1.0)
 
@@ -965,6 +1097,8 @@ func _attract() -> void:
 
 
 func _on_noise(at: Vector3, radius: float) -> void:
+	if cond.get("id", "") == "storm":
+		radius *= 0.7  # the rain covers you
 	for m in hunters:
 		m.hear(at, radius)
 	for e in eryopses:
@@ -986,6 +1120,7 @@ func _physics_process(dt: float) -> void:
 				_through(p)
 		_rift_clock()
 		_fly_loot()
+		_hazards(get_physics_process_delta_time())
 		if not outpost_tripped and world.outpost:
 			for p: Player in alive_players():
 				if world.outpost.contains(p.position):
@@ -1056,6 +1191,54 @@ func act(id: int, kind: int, arg: int) -> void:
 				return
 			p.held = arg
 			_emit(["hold", id, arg])
+		7:
+			_swing(p)
+		8:
+			_stun_flash(p)
+
+
+## The shovel: stuns a hunter, makes a compy drop what it has, and sends a
+## friend staggering with whatever was in their hands flying.
+func _swing(p: Player) -> void:
+	if int(p.gear.get("shovel", 0)) <= 0 or p.swing_cd > 0.0:
+		return
+	p.swing_cd = 0.8
+	var fwd := Basis(Vector3.UP, p.yaw) * Vector3.FORWARD
+	var reach := p.position + fwd * 1.4
+	var hit := ""
+	for c in compys:
+		if hit == "" and c.position.distance_to(reach) < 1.6:
+			c.whack(p.position)
+			hit = "compy"
+	for m in hunters:
+		if hit == "" and (m.head_pos().distance_to(reach + Vector3(0, 1.0, 0)) < 2.4 or m.position.distance_to(reach) < 2.4):
+			m.stun(3.0)
+			hit = "hunter"
+	for q: Player in alive_players():
+		if hit == "" and q != p and q.position.distance_to(reach) < 1.3:
+			var h := q.held_item()
+			if h >= 0:
+				q.slots[q.held] = -1
+				_reweigh(q)
+				var v := fwd * 5.0 + Vector3(0, 3.0, 0)
+				loot[h].throw_from(q.position + Vector3(0, 1.3, 0), v, q.id)
+				_emit(["throw", q.id, h, q.position.x, q.position.y + 1.3, q.position.z, v.x, v.y, v.z])
+			hit = "friend"
+	_on_noise(p.position, 10.0 if hit != "" else 4.0)
+	_emit(["swing", p.id, hit])
+
+
+## The stun flash: every hunter with a line of sight to you is blinded.
+func _stun_flash(p: Player) -> void:
+	if p.flash_left <= 0:
+		return
+	p.flash_left -= 1
+	var eye := p.position + Vector3(0, 1.5, 0)
+	for m in hunters:
+		var h: Vector3 = m.head_pos()
+		if h.distance_to(eye) < 20.0 and world.clear_line(eye, h):
+			m.stun(4.5)
+	_emit(["stunflash", p.id, p.flash_left])
 
 
 func _reweigh(p: Player) -> void:
@@ -1105,8 +1288,8 @@ func _pad_value() -> int:
 ## Seven minutes. Halfway, the era starts to notice. The last minute, the
 ## rift strains. Then it collapses, and anyone still out there is gone.
 func _rift_clock() -> void:
-	var left := RIFT_TIME - elapsed
-	if strain_sent == 0 and elapsed > RIFT_TIME * 0.5:
+	var left := rift_len - elapsed
+	if strain_sent == 0 and elapsed > rift_len * 0.5:
 		strain_sent = 1
 		for m in hunters:
 			m.drift = minf(0.9, m.drift + 0.2)
@@ -1160,6 +1343,36 @@ func _fly_loot() -> void:
 			_on_noise(l.position, 12.0 if l.fall_speed > 4.0 else 3.0)
 			_emit(["land", l.idx, l.position.x, l.position.y, l.position.z, 1 if broke else 0])
 
+## The land itself: stampedes now and then, and pits that swallow you.
+func _hazards(dt: float) -> void:
+	for p: Player in players.values():
+		p.swing_cd = maxf(0.0, p.swing_cd - dt)
+	for p: Player in alive_players():
+		if p.sink >= 1.0:
+			_kill(p, p.position + Vector3(0, 0.3, 0))
+	for h in herds:
+		if float(h.get("dash_t", 0.0)) > 0.0:
+			h.dash_t = float(h.dash_t) - dt
+	if herds.is_empty():
+		return
+	if next_stampede == 0.0:
+		next_stampede = randf_range(90.0, 200.0)
+	next_stampede -= dt
+	if next_stampede > 0.0:
+		return
+	next_stampede = randf_range(120.0, 240.0)
+	var h: Dictionary = herds[randi() % herds.size()]
+	var c: Vector3 = h.center
+	var target := nearest_player(c)
+	if target == null or target.position.distance_to(c) > 90.0:
+		return
+	var d := target.position - c
+	d.y = 0.0
+	h.dash = d.normalized()
+	h.dash_t = 9.0
+	_emit(["stampede", c.x, c.y, c.z])
+
+
 ## Somebody took an egg: its parent knows.
 func _nest_taken(p: Player, at: Vector3) -> void:
 	nest_taken += 1
@@ -1194,6 +1407,8 @@ func _spill(p: Player) -> void:
 func _kill(p: Player, at: Vector3) -> void:
 	if p == null or not p.alive or p.through or not sim_on:
 		return
+	var qd := _quota()
+	qd.deaths = int(qd.get("deaths", 0)) + 1
 	if mode == "server" and Net.dev.has("debug"):
 		print("kill ", p.id, " at ", p.position, " by ", at, " ", get_stack().slice(1, 3))
 	_spill(p)
@@ -1483,8 +1698,8 @@ func _on_event(ev: Array) -> void:
 			_refresh_carry(my_id)
 			_update_list()
 		"quota":
-			Net.quota = {"target": int(ev[1]), "banked": int(ev[2]), "left": int(ev[3]), "round": int(ev[4])}
-			_quota_result(str(ev[5]))
+			Net.quota = ev[1]
+			_quota_result(str(ev[2]))
 		"through":
 			var pid := int(ev[1])
 			if mode == "client":
@@ -1535,6 +1750,43 @@ func _on_event(ev: Array) -> void:
 				hud.say([["the door banged shut behind you.", 3.0], ["something outside heard it.", 3.5]])
 			else:
 				hud.say([["%s went into the outpost." % _name(int(ev[1])), 3.0]])
+		"swing":
+			var pid := int(ev[1])
+			var hit := str(ev[2])
+			var at: Vector3 = local.position if pid == my_id else (avatars[pid].position if avatars.has(pid) else local.position)
+			_sound_at(sounds.whoosh, at + Vector3(0, 1.4, 0), 4.0)
+			if hit != "":
+				_sound_at(sounds.step, at + Vector3(0, 1.2, 0), 8.0)
+			if pid == my_id:
+				local.swing_anim = 0.3
+				if hit == "hunter":
+					hud.say([["STUNNED IT.  run.", 2.0]])
+			elif avatars.has(pid):
+				avatars[pid].emote(2)
+		"stunflash":
+			var pid := int(ev[1])
+			var at: Vector3 = local.position if pid == my_id else (avatars[pid].eye() if avatars.has(pid) else local.position)
+			_sound_at(sounds.flash, at, 10.0)
+			if pid == my_id:
+				local.flash_left = int(ev[2])
+				hud.white = 0.6
+				_update_list()
+			elif local.cam.global_position.distance_to(at) < 20.0:
+				hud.white = maxf(hud.white, 0.7)
+		"cpick":
+			if mode == "client":
+				loot[int(ev[1])].set_state(Loot.CARRIED, -1)
+		"chirp":
+			var c: Compy = compys[int(ev[1])] if int(ev[1]) < compys.size() else null
+			if c:
+				c.chirp.pitch_scale = randf_range(1.5, 1.9)
+				c.chirp.play()
+		"stampede":
+			var at := Vector3(ev[1], ev[2], ev[3])
+			_sound_at(sounds.rumble, at, 40.0)
+			if local.position.distance_to(at) < 90.0:
+				hud.say([["STAMPEDE!  get out of the way!", 3.5]])
+				local.shake = maxf(local.shake, 0.6)
 		"collapse":
 			if rumble:
 				rumble.stop()
@@ -1609,10 +1861,14 @@ func _quota_result(result: String) -> void:
 	match result:
 		"met":
 			quota_msg = "QUOTA MET!  next quota: %s in 3 drops" % Run.cash(int(q.target))
+			if int(q.round) == 2:
+				quota_msg += "\nHELL CREEK is open on the console."
 		"fired":
-			quota_msg = "QUOTA MISSED.  the Bureau let you go.\ncredits wiped.  (your hats are safe.)"
-			Run.money = 0
-			Run.save()
+			var L: Dictionary = q.get("last", {})
+			quota_msg = "YOU'RE FIRED.   %s of %s.\n%d drops  -  %d quota%s met  -  %s hauled  -  %d lost in time\ncredits and gear confiscated.  (your hats are yours.)" % [
+				Run.cash(int(L.get("banked", 0))), Run.cash(int(L.get("target", 0))), int(L.get("days", 0)), int(L.get("quotas", 0)),
+				"" if int(L.get("quotas", 0)) == 1 else "s", Run.cash(int(L.get("total", 0))), int(L.get("deaths", 0))]
+			Run.fired()
 		_:
 			quota_msg = "%s more needed  -  %d drop%s left" % [Run.cash(int(q.target) - int(q.banked)), int(q.left), "" if int(q.left) == 1 else "s"]
 	if mode == "client" and state == "card":
@@ -1732,6 +1988,66 @@ func _drop(throw := false) -> void:
 	else:
 		act(my_id, kind, 0)
 
+## Tools: the shovel and stun flash go through the rules; the scanner is
+## just for you.
+func _tool(t: String) -> void:
+	if hub or state != "play" or not local.alive or local.through:
+		return
+	match t:
+		"shovel":
+			if int(Run.gear.get("shovel", 0)) <= 0:
+				return
+			local.swing_anim = 0.3
+			if mode == "client":
+				Net.act(7, 0)
+			else:
+				act(my_id, 7, 0)
+		"flash":
+			if int(Run.gear.get("flash", 0)) <= 0:
+				hud.say([["no stun flash.  the kiosk sells them.", 2.0]])
+				return
+			if mode == "client":
+				Net.act(8, 0)
+			else:
+				act(my_id, 8, 0)
+		"scan":
+			if int(Run.gear.get("scanner", 0)) <= 0:
+				hud.say([["no scanner.  the kiosk sells them.", 2.0]])
+				return
+			if scan_cd > 0.0:
+				return
+			scan_cd = 8.0
+			scan_t = 4.0
+			sfx.stream = sounds.beep
+			sfx.pitch_scale = 0.7
+			sfx.play()
+			for l in loot:
+				if l.on_ground() and l.position.distance_to(local.position) < 45.0:
+					l.scan_t = 4.0
+
+
+func _scan_tick(dt: float) -> void:
+	scan_cd = maxf(0.0, scan_cd - dt)
+	scan_t = maxf(0.0, scan_t - dt)
+	if scan_t <= 0.0:
+		hud.set_radar([])
+		return
+	var blips := []
+	var inv := Basis(Vector3.UP, local.yaw).inverse()
+	var add := func(p: Vector3, c: Color) -> void:
+		var r: Vector3 = inv * (p - local.position)
+		if r.length() < 45.0:
+			blips.append([Vector2(r.x, r.z) / 45.0, c])
+	for m in hunters:
+		add.call(m.head_pos(), Color(1.0, 0.25, 0.2))
+	for c in netted:
+		if not (c is Meganeura):
+			add.call(c.global_position, Color(1.0, 0.85, 0.3))
+	for pid in avatars:
+		add.call(avatars[pid].position, Color(0.4, 0.9, 1.0))
+	hud.set_radar(blips)
+
+
 ## Switch hands, unless both are full of egg.
 func _hold(k: int) -> void:
 	if hub or k == local.held:
@@ -1764,6 +2080,8 @@ func _throw_decoy() -> void:
 
 
 func _quota() -> Dictionary:
+	if mode == "server":
+		return net_room.quota
 	return Net.quota if Net.online and not Net.quota.is_empty() else Run.quota
 
 
@@ -1794,6 +2112,15 @@ func _update_list() -> void:
 	lines.append(_quota_text())
 	if Run.decoys > 0:
 		lines.append("DECOYS  %d%s" % [Run.decoys, "" if touch else "  (Q)"])
+	var tools := []
+	if int(Run.gear.get("shovel", 0)) > 0:
+		tools.append("SHOVEL" + ("" if touch else " (click)"))
+	if int(Run.gear.get("scanner", 0)) > 0:
+		tools.append("SCAN" + ("" if touch else " (R)"))
+	if int(Run.gear.get("flash", 0)) > 0:
+		tools.append("FLASH x%d" % local.flash_left + ("" if touch else " (H)"))
+	if not tools.is_empty():
+		lines.append("  ".join(tools))
 	hud.set_list("\n".join(lines))
 
 func _emote_pressed(e: int) -> void:
@@ -1849,7 +2176,10 @@ func _voice_tick() -> void:
 		var gain := 1.0
 		if out and not me_out:
 			gain = 0.0
-		Net.voice.peer(pid, e.pos + Vector3(0, 1.5, 0), gain, out and me_out)
+		# walkie-talkies: both carrying one, you hear each other from anywhere
+		var radio := not out and not me_out and int(Run.gear.get("walkie", 0)) > 0 \
+			and int(Net.members.get(pid, {}).get("look", {}).get("walkie", 0)) > 0
+		Net.voice.peer(pid, e.pos + Vector3(0, 1.5, 0), gain * (0.8 if radio else 1.0), (out and me_out) or radio)
 
 
 func _roster_tick(dt: float) -> void:
@@ -1889,6 +2219,12 @@ func _unhandled_input(e: InputEvent) -> void:
 			_drop(true)
 		elif e.is_action_pressed("decoy"):
 			_throw_decoy()
+		elif e.is_action_pressed("scan"):
+			_tool("scan")
+		elif e.is_action_pressed("stun"):
+			_tool("flash")
+		if e is InputEventMouseButton and e.pressed and e.button_index == MOUSE_BUTTON_LEFT and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
+			_tool("shovel")
 		for k in local.slots.size():
 			if e.is_action_pressed("slot%d" % (k + 1)):
 				_hold(k)
@@ -2063,11 +2399,13 @@ func _play_tick(dt: float) -> void:
 	if not hub and int(state_t * 4.0) != int((state_t - dt) * 4.0):
 		_update_list()
 	if not hub:
-		hud.set_rift(RIFT_TIME - elapsed)
+		hud.set_rift(rift_len - elapsed)
 	if local.touch:
 		local.touch.use_label = "GRAB" if target_loot else ({"rift": "HOME"}.get(target_spot, "USE") if target_spot != "" else "")
 		local.touch.can_drop = local.held_item() >= 0 and not hub
 		local.touch.decoys = Run.decoys if not hub else 0
+		local.touch.tools = [] if hub else ["shovel", "scan", "flash"].filter(func(k: String) -> bool:
+			return int(Run.gear.get({"scan": "scanner"}.get(k, k), 0)) > 0)
 	if mode == "client" and flags.has("emote") and emote_cool <= -2.0:
 		_emote_pressed(int(flags.emote))
 	if mode == "client" and flags.has("throwat") and state_t > float(flags.throwat) and local.held_item() >= 0:
@@ -2100,6 +2438,11 @@ func _play_tick(dt: float) -> void:
 	local.fear = lerpf(local.fear, maxf(near, hunted * 0.7), 1.0 - exp(-dt * 1.5))
 	# the frogs go quiet when it's close
 	amb.volume_db = lerpf(amb.volume_db, lerpf(era.loops[0][1], -30.0, local.fear), 1.0 - exp(-dt * 1.2))
+	if cond.get("id", "") == "storm":
+		_storm(dt)
+	_scan_tick(dt)
+	if local.sink > 0.05:
+		hud.prompt("SINKING  -  get out!")
 	# the swamp is never quite silent
 	next_event -= dt
 	if next_event <= 0.0:
@@ -2111,6 +2454,23 @@ func _play_tick(dt: float) -> void:
 	if mode == "solo" and ui == "" and not flags.has("play") and not touch and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
 		get_tree().paused = true
 		hud.paused_label.visible = true
+
+
+## Lightning: the whole world blinks white, then thunder rolls in.
+func _storm(dt: float) -> void:
+	lightning -= dt
+	if lightning <= 0.0:
+		lightning = randf_range(7.0, 20.0)
+		hud.white = maxf(hud.white, 0.45)
+		env.ambient_light_energy += 2.0
+		get_tree().create_timer(0.12).timeout.connect(func() -> void: env.ambient_light_energy -= 2.0)
+		var p := AudioStreamPlayer.new()
+		p.stream = sounds.crack
+		p.pitch_scale = randf_range(0.35, 0.5)
+		p.volume_db = 4.0
+		add_child(p)
+		get_tree().create_timer(randf_range(0.6, 2.5)).timeout.connect(p.play)
+		p.finished.connect(p.queue_free)
 
 
 func _distant_event() -> void:

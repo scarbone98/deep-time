@@ -38,9 +38,14 @@ const FACES := [
 
 ## Things that help. Upgrades have one price per level.
 const GEAR := [
-	{"id": "decoy", "name": "SQUEAKY DECOY", "costs": [35], "about": "throw it (Q): it squeaks and draws the hunter"},
-	{"id": "pack", "name": "BIGGER PACK", "costs": [250, 600], "about": "+1 bag slot per level"},
+	{"id": "shovel", "name": "SHOVEL", "costs": [150], "about": "left click: stuns a hunter for a few seconds, makes compies drop things. works on friends too"},
+	{"id": "scanner", "name": "SCANNER", "costs": [180], "about": "R: pings loot values and nearby creatures"},
+	{"id": "flash", "name": "STUN FLASH", "costs": [220], "about": "H: blinds every hunter that can see you. 3 charges a drop"},
+	{"id": "walkie", "name": "WALKIE-TALKIE", "costs": [80], "about": "talk to friends with walkies from anywhere (co-op)"},
+	{"id": "decoy", "name": "SQUEAKY DECOY", "costs": [35], "about": "Q: throw it; it squeaks and draws the hunter"},
+	{"id": "pack", "name": "BIGGER POCKETS", "costs": [250, 600], "about": "+1 hand slot per level"},
 	{"id": "battery", "name": "LONG-LIFE BATTERY", "costs": [200], "about": "the lamp lasts twice as long"},
+	{"id": "stabilizer", "name": "RIFT STABILIZER", "costs": [300, 700], "about": "the rift stays open 1 more minute per level (for the whole crew)"},
 ]
 
 
@@ -82,6 +87,7 @@ static func clean_look(look: Variant) -> Dictionary:
 		# upgrades ride along with the look
 		if look.has("pack"):
 			out["pack"] = clampi(int(look.pack), 0, 2)
-		if look.has("battery"):
-			out["battery"] = clampi(int(look.battery), 0, 1)
+		for k in ["battery", "shovel", "scanner", "flash", "walkie", "stabilizer"]:
+			if look.has(k):
+				out[k] = clampi(int(look[k]), 0, 2)
 	return out

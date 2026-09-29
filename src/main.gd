@@ -1,5 +1,6 @@
 extends Node3D
-## DEEP TIME, Level 1: the Coal Forest.
+## DEEP TIME: Backrooms through prehistory. One scene, rebuilt per level
+## from the era table in eras.gd; Run carries progress across reloads.
 ##
 ## Dev flags (URL query on web, `-- key=value` on desktop):
 ##   play        skip the title card          seed=N   fixed layout
@@ -7,14 +8,16 @@ extends Node3D
 ##   light       lamp on                      freeze   creatures hold still
 ##   yaw=deg / pitch=deg   look direction     die / win   trigger the ending
 ##   shots=N     first N shots already filmed near=eryops|scorp  start by one
+##   level=N     play that level              attract  cabinet video scene
 
-const FOG := Color(0.16, 0.19, 0.155)
+var level := 1
+var era: Dictionary
 
 var flags := {}
 var sounds := {}
 var world: World
 var player: Player
-var mill: Millipede
+var mill: Node3D  # the first hunter
 var exit_node: Exit
 var hud: Hud
 var flies: Array[Meganeura] = []
@@ -26,19 +29,17 @@ var state_t := 0.0
 var elapsed := 0.0
 var next_event := 30.0
 var touch := false
-var mills: Array[Millipede] = []
+var hunters: Array = []
+var grazers: Array[Grazer] = []
+var dicys: Array[Dicynodon] = []
 var eryopses: Array[Eryops] = []
 var scorps: Array[Scorpion] = []
 var env: Environment
 var sun: DirectionalLight3D
 var door_hint := 0.0
-## The shot list: film each of these to wake the way out.
-var shots := [
-	{"id": "fly", "name": "MEGANEURA", "need": 2.0, "range": 7.0},
-	{"id": "eryops", "name": "ERYOPS", "need": 2.0, "range": 16.0},
-	{"id": "scorp", "name": "PULMONOSCORPIUS", "need": 2.0, "range": 10.0},
-	{"id": "mill", "name": "ARTHROPLEURA", "need": 3.0, "range": 14.0},
-]
+var shots: Array = []
+var win_text := ""
+var win_foot := ""
 
 
 func _ready() -> void:
@@ -47,6 +48,11 @@ func _ready() -> void:
 	get_tree().root.size_changed.connect(_fit)
 	_fit()
 	_input_map()
+	Run.load_save()
+	level = clampi(int(flags.get("level", str(Run.level))), 1, Eras.COUNT)
+	Run.level = level
+	era = Eras.get_era(level)
+	shots = era.shots.duplicate(true)
 	sounds = Synth.all()
 	var seed_ := int(flags.get("seed", str(randi() % 1000000)))
 	print("seed ", seed_)
@@ -56,7 +62,7 @@ func _ready() -> void:
 	world.lite = touch
 	world.process_mode = Node.PROCESS_MODE_PAUSABLE
 	add_child(world)
-	world.generate(seed_)
+	world.generate(seed_, era.id)
 	_environment()
 
 	player = Player.new()
@@ -70,13 +76,70 @@ func _ready() -> void:
 	exit_node = Exit.new()
 	exit_node.process_mode = Node.PROCESS_MODE_PAUSABLE
 	add_child(exit_node)
-	exit_node.setup(world, sounds, player)
+	exit_node.setup(world, sounds, player, era.exit)
 
 	var rng := RandomNumberGenerator.new()
 	rng.seed = seed_ + 99
 	var mstart := _creature_start(rng, 60.0, 85.0)
 	var facing := (world.spawn - mstart).normalized().rotated(Vector3.UP, rng.randf_range(-1.2, 1.2))
-	mill = _spawn_mill(mstart, facing)
+	mill = _spawn_hunter(mstart, facing)
+	if era.id == "permian":
+		_populate_permian(rng)
+	else:
+		_populate_carboniferous(rng)
+	for sh in shots:
+		sh.prog = 0.0
+		sh.done = false
+
+	hud = Hud.new()
+	add_child(hud)
+	if touch:
+		var pad := TouchPad.new()
+		pad.player = player
+		hud.add_touch(pad)
+		player.touch = pad
+	# field recordings (CC0, see audio/CREDITS.md)
+	amb = _loop_player(era.loops[0][0], era.loops[0][1])
+	rain = _loop_player(era.loops[1][0], era.loops[1][1])
+	hud.date.text = era.date
+	sfx = AudioStreamPlayer.new()
+	add_child(sfx)
+
+	hud.set_shots(shots)
+	_apply_dev_flags()
+	if flags.has("play") or Run.autostart:
+		Run.autostart = false
+		_start()
+	else:
+		_title()
+
+
+func _title() -> void:
+	var controls := "left thumb move (drag past the ring to run)\nright thumb look" if touch else "WASD move    SHIFT run    C crouch    F lamp"
+	hud.show_card("DEEP TIME", "LEVEL %d  -  %s" % [level, era.title], era.intro + "\n\n" + controls,
+		"tap to start recording" if touch else "click to start recording")
+	var stages := []
+	for n in range(1, Eras.COUNT + 1):
+		var e := Eras.get_era(n)
+		var label := "%d %s" % [n, e.title]
+		if n > Run.unlocked and n != level:
+			label = "%d ??????" % n
+		elif Run.best.has(n):
+			label += " (%s)" % Run.clock(float(Run.best[n]))
+		stages.append({"n": n, "label": label, "locked": n > Run.unlocked and n != level, "current": n == level})
+	hud.show_stages(stages, _pick_stage)
+
+
+func _pick_stage(n: int) -> void:
+	if n == level:
+		_start()
+		return
+	Run.level = n
+	Run.autostart = true
+	get_tree().reload_current_scene()
+
+
+func _populate_carboniferous(rng: RandomNumberGenerator) -> void:
 
 	for k in 4:
 		var f := Meganeura.new()
@@ -109,31 +172,31 @@ func _ready() -> void:
 		sc.setup(player, sounds, at, atan2(side.x, side.z))
 		sc.struck.connect(func() -> void: _killed(sc.global_position + Vector3(0, 0.5, 0)))
 		scorps.append(sc)
-	for sh in shots:
-		sh.prog = 0.0
-		sh.done = false
 
-	hud = Hud.new()
-	add_child(hud)
-	if touch:
-		var pad := TouchPad.new()
-		pad.player = player
-		hud.add_touch(pad)
-		player.touch = pad
-	# field recordings (CC0, see audio/CREDITS.md): frogs and insects over dripping canopy
-	amb = _loop_player("res://audio/frogswamp.ogg", -6.0)
-	rain = _loop_player("res://audio/darkrain.ogg", -15.0)
-	sfx = AudioStreamPlayer.new()
-	add_child(sfx)
 
-	hud.set_shots(shots)
-	_apply_dev_flags()
-	if flags.has("play"):
-		_start()
-	else:
-		hud.show_card("DEEP TIME", "LEVEL 1  -  THE COAL FOREST",
-			"307 million years before anyone.\nFilm what lives here. Then find the way through.\n\nIt cannot see you. It feels you move.\n\n" + ("left thumb move (drag past the ring to run)\nright thumb look" if touch else "WASD move    SHIFT run    C crouch    F lamp"),
-			"tap to start recording" if touch else "click to start recording")
+func _populate_permian(rng: RandomNumberGenerator) -> void:
+	var sm := Meshes.scutosaurus()
+	for h in 3:
+		var c := _creature_start(rng, 35.0, 90.0)
+		var herd := {"center": c}
+		var goal := _ring(c, 20.0, 50.0)
+		var tw := create_tween().set_loops()
+		tw.tween_method(func(v: Vector3) -> void: herd.center = v, c, goal, 90.0)
+		tw.tween_method(func(v: Vector3) -> void: herd.center = v, goal, c, 90.0)
+		for k in rng.randi_range(3, 5):
+			var g := Grazer.new()
+			g.process_mode = Node.PROCESS_MODE_PAUSABLE
+			add_child(g)
+			g.setup(world, herd, sounds, sm)
+			grazers.append(g)
+	var dm := Meshes.dicynodon()
+	for b in world.burrows:
+		if rng.randf() < 0.6:
+			var d := Dicynodon.new()
+			d.process_mode = Node.PROCESS_MODE_PAUSABLE
+			add_child(d)
+			d.setup(world, player, sounds, dm, b)
+			dicys.append(d)
 
 
 ## Same pixel budget in both orientations: 640x360 landscape, 360x640 portrait.
@@ -152,14 +215,14 @@ func _loop_player(path: String, db: float) -> AudioStreamPlayer:
 	return p
 
 
-func _spawn_mill(at: Vector3, facing: Vector3) -> Millipede:
-	var m := Millipede.new()
+func _spawn_hunter(at: Vector3, facing: Vector3) -> Node3D:
+	var m: Node3D = Gorgon.new() if era.id == "permian" else Millipede.new()
 	m.process_mode = Node.PROCESS_MODE_PAUSABLE
 	add_child(m)
 	m.setup(world, player, sounds, at, facing)
 	m.caught.connect(func() -> void: _killed(m.head_pos() + Vector3(0, 0.3, 0)))
 	m.alerted.connect(func() -> void: player.fear = maxf(player.fear, 0.8))
-	mills.append(m)
+	hunters.append(m)
 	return m
 
 
@@ -194,22 +257,22 @@ func _creature_start(rng: RandomNumberGenerator, lo: float, hi: float) -> Vector
 func _environment() -> void:
 	env = Environment.new()
 	env.background_mode = Environment.BG_COLOR
-	env.background_color = FOG
+	env.background_color = era.fog
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	env.ambient_light_color = Color(0.32, 0.4, 0.32)
-	env.ambient_light_energy = 0.8
+	env.ambient_light_color = era.ambient
+	env.ambient_light_energy = era.ambient_energy
 	env.fog_enabled = true
-	env.fog_light_color = FOG
-	env.fog_density = 0.05
+	env.fog_light_color = era.fog
+	env.fog_density = era.fog_density
 	env.fog_sky_affect = 1.0
 	env.tonemap_mode = Environment.TONE_MAPPER_FILMIC
 	var we := WorldEnvironment.new()
 	we.environment = env
 	add_child(we)
 	sun = DirectionalLight3D.new()
-	sun.rotation_degrees = Vector3(-50, 35, 0)
-	sun.light_color = Color(0.75, 0.88, 0.78)
-	sun.light_energy = 0.55
+	sun.rotation_degrees = era.sun_rot
+	sun.light_color = era.sun
+	sun.light_energy = era.sun_energy
 	add_child(sun)
 
 
@@ -261,11 +324,12 @@ func _apply_dev_flags() -> void:
 		var fwd := Basis(Vector3.UP, player.yaw) * Vector3.FORWARD
 		var at := player.position + fwd * float(flags.mill)
 		var old := mill
-		mills.erase(old)
+		hunters.erase(old)
 		old.queue_free()
-		mill = _spawn_mill(at, Basis(Vector3.UP, float(flags.get("mturn", "1.1"))) * -fwd)
+		mill = _spawn_hunter(at, Basis(Vector3.UP, float(flags.get("mturn", "1.1"))) * -fwd)
 	if flags.has("near"):
-		var target: Node3D = eryopses[0] if flags.near == "eryops" and not eryopses.is_empty() else (scorps[0] if not scorps.is_empty() else null)
+		var pool := {"eryops": eryopses, "scorp": scorps, "scuto": grazers, "dicy": dicys}.get(flags.near, []) as Array
+		var target: Node3D = pool[0] if not pool.is_empty() else null
 		if target:
 			var dist := float(flags.get("neard", "12" if target is Eryops else "7"))
 			var a := randf() * TAU
@@ -295,13 +359,18 @@ func _start() -> void:
 	state = "play"
 	state_t = 0.0
 	hud.hide_card()
+	hud.show_stages([], Callable())
 	player.begin()
 	exit_node.begin()
 	amb.play()
 	rain.play(randf() * 60.0)
 	if not flags.has("freeze"):
-		for m in mills:
+		for m in hunters:
 			m.begin()
+		for g in grazers:
+			g.begin()
+		for d in dicys:
+			d.begin()
 		for f in flies:
 			f.begin()
 		for e in eryopses:
@@ -310,12 +379,12 @@ func _start() -> void:
 			sc.begin()
 	if not flags.has("play") and not touch:
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
-	if flags.has("attract"):
+	if flags.has("attract") and era.id == "carboniferous":
 		_attract()
 		# recording is slow: the capture script sets ts so a frame is 1/30 s
 		Engine.time_scale = float(flags.get("ts", "1"))
 		return
-	hud.say([["", 1.5], ["fill the shot list.  keep them in frame.", 4.5], ["it can't see you.  it feels you move.", 4.5],
+	hud.say([["", 1.5], ["fill the shot list.  keep them in frame.", 4.5], [era.tip, 4.5],
 		["the lamp helps.  the flies like it too." if touch else "SHIFT run   C crouch   F lamp", 5.0]])
 
 
@@ -340,7 +409,7 @@ func _attract() -> void:
 
 
 func _on_noise(at: Vector3, radius: float) -> void:
-	for m in mills:
+	for m in hunters:
 		m.hear(at, radius)
 	for e in eryopses:
 		e.hear(at, radius)
@@ -351,7 +420,7 @@ func _killed(at: Vector3) -> void:
 		return
 	state = "dead"
 	state_t = 0.0
-	for m in mills:
+	for m in hunters:
 		m.active = false
 	player.die(at)
 	hud.say([])
@@ -364,11 +433,21 @@ func _win() -> void:
 	state = "won"
 	state_t = 0.0
 	player.control = false
-	for m in mills:
+	for m in hunters:
 		m.active = false
 	hud.say([])
 	sfx.stream = sounds.hum
 	sfx.play()
+	var prev_best: float = float(Run.best.get(level, -1.0))
+	var fresh := Run.record(level, elapsed)
+	var times := "%s   (%s)" % [Run.clock(elapsed), "new best" if fresh else "best " + Run.clock(float(Run.best[level]))]
+	if prev_best < 0.0:
+		times = Run.clock(elapsed)
+	var more := level < Eras.COUNT
+	var next_line := "next:  LEVEL %d  -  %s" % [level + 1, Eras.get_era(level + 1).title] if more \
+		else "that's everything on the tape so far.\nmore of deep time is coming."
+	win_text = "%s  -  %d of %d shots  -  %s\n\n%s" % [era.title, shots.size(), shots.size(), times, next_line]
+	win_foot = ("tap" if touch else "click") + (" to keep going down" if more else " to start again")
 
 
 func _unhandled_input(e: InputEvent) -> void:
@@ -385,6 +464,9 @@ func _unhandled_input(e: InputEvent) -> void:
 		"dead", "won":
 			if state_t > 1.5:
 				get_tree().paused = false
+				if state == "won":
+					Run.level = level + 1 if level < Eras.COUNT else 1
+				Run.autostart = true
 				get_tree().reload_current_scene()
 
 
@@ -411,9 +493,7 @@ func _process(dt: float) -> void:
 		if state_t > 1.6:
 			hud.white = 0.0
 			hud.glitch = 0.0
-			hud.show_card("NOCLIP", "you slipped through the layer",
-				"THE COAL FOREST  -  4 of 4 shots  -  %s\n\nnext:  LEVEL 2  -  THE PERMIAN\n(not yet recorded)" % hud.tc.text,
-				"tap to go again" if touch else "click to go again")
+			hud.show_card("NOCLIP", "you slipped through the layer", win_text, win_foot)
 	if flags.has("die") and state == "play" and state_t > 1.0:
 		flags.erase("die")
 		_killed(mill.head_pos())
@@ -425,14 +505,15 @@ func _process(dt: float) -> void:
 func _play_tick(dt: float) -> void:
 	elapsed += dt
 	if flags.has("debug") and int(elapsed * 2.0) != int((elapsed - dt) * 2.0):
-		print("pos %.1f,%.1f yaw %.2f" % [player.position.x, player.position.z, player.yaw])
+		print("pos %.1f,%.1f yaw %.2f  hunter %s" % [player.position.x, player.position.z, player.yaw,
+			mill.state + (" seen %.2f" % mill.seen if mill is Gorgon else "")])
 	hud.clock = elapsed
 	hud.set_battery(player.battery, player.light.visible)
 	var d := 999.0
 	var hunted := 0.0
-	for m in mills:
+	for m in hunters:
 		d = minf(d, Vector2(player.position.x - m.head_pos().x, player.position.z - m.head_pos().z).length())
-		if m.state == "hunt":
+		if m.is_hunting():
 			hunted = 1.0
 	var near := clampf(1.0 - d / 22.0, 0.0, 1.0)
 	hud.glitch = lerpf(hud.glitch, near * near * 0.4, 1.0 - exp(-dt * 4.0))
@@ -521,10 +602,16 @@ func _film_points(id: String) -> Array:
 		"scorp":
 			for sc in scorps:
 				out.append(sc.film_point())
-		"mill":
-			for m in mills:
-				out.append(m.head_pos() + Vector3(0, 0.3, 0))
-				out.append(m.pos[Millipede.N / 2] + Vector3(0, 0.3, 0))
+		"hunter":
+			for m in hunters:
+				out.append_array(m.film_points())
+		"scuto":
+			for g in grazers:
+				out.append(g.film_point())
+		"dicy":
+			for d in dicys:
+				if d.out():
+					out.append(d.film_point())
 	return out
 
 
@@ -549,15 +636,16 @@ func _escalate(live: bool) -> void:
 		if sh.done:
 			n += 1
 	var k := n / float(shots.size())
-	var fog := FOG.lerp(FOG * 0.5, k)
+	var base: Color = era.fog
+	var fog := base.lerp(base * 0.5, k)
 	fog.a = 1.0
 	env.fog_light_color = fog
 	env.background_color = fog
-	env.ambient_light_energy = lerpf(0.8, 0.38, k)
-	sun.light_energy = lerpf(0.55, 0.18, k)
-	for m in mills:
+	env.ambient_light_energy = lerpf(era.ambient_energy, era.ambient_energy * 0.45, k)
+	sun.light_energy = lerpf(era.sun_energy, era.sun_energy * 0.3, k)
+	for m in hunters:
 		m.drift = 0.45 + n * 0.1
-		m.hunt_speed = 5.2 + n * 0.15
+		m.hunt_speed += 0.15
 	if not live:
 		if n == shots.size():
 			exit_node.activate()
@@ -570,8 +658,8 @@ func _escalate(live: bool) -> void:
 	sfx.stream = sounds.crack
 	sfx.volume_db = 4.0
 	sfx.play()
-	var m2 := _spawn_mill(_ring(player.position, 45.0, 60.0), Vector3.FORWARD)
+	var m2 := _spawn_hunter(_ring(player.position, 45.0, 60.0), Vector3.FORWARD)
 	m2.drift = 0.8
-	m2.hunt_speed = 5.8
+	m2.hunt_speed += 0.6
 	m2.begin()
 	hud.say([["SHOT LIST COMPLETE", 3.0], ["somewhere, a light came on.", 4.0], ["something else woke up with it.", 4.5]])

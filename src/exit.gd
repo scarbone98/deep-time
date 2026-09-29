@@ -4,8 +4,11 @@ extends Node3D
 ## wallpapered wall with a doorway, a patch of damp carpet, a floating piece
 ## of drop ceiling and one humming fluorescent tube.
 
-const WALL := Color(0.74, 0.66, 0.36)
-const WALL2 := Color(0.68, 0.6, 0.31)
+var WALL := Color(0.74, 0.66, 0.36)
+var WALL2 := Color(0.68, 0.6, 0.31)
+var FLOOR := Color(0.52, 0.46, 0.28)
+var LIGHT := Color(1.0, 0.95, 0.75)
+var DOOR := Color(1.0, 0.9, 0.55)
 
 var player: Player
 var light: OmniLight3D
@@ -19,8 +22,13 @@ var next_flicker := 4.0
 var on := false  # dark until the shot list is done
 
 
-func setup(w: World, s: Dictionary, p: Player) -> void:
+func setup(w: World, s: Dictionary, p: Player, look: Dictionary) -> void:
 	player = p
+	WALL = look.wall
+	WALL2 = look.wall2
+	FLOOR = look.floor
+	LIGHT = look.light
+	DOOR = look.door
 	position = w.exit_pos
 	rotation.y = w.exit_yaw
 	var mat := StandardMaterial3D.new()
@@ -52,7 +60,7 @@ func setup(w: World, s: Dictionary, p: Player) -> void:
 	rng.seed = 3
 	for gz in 8:
 		for gx in 10:
-			var c := Color(0.52, 0.46, 0.28).lerp(Color(0.33, 0.29, 0.17), rng.randf() * rng.randf())
+			var c := FLOOR.lerp(FLOOR.darkened(0.4), rng.randf() * rng.randf())
 			var x0 := -2.5 + gx * 0.5
 			var z0 := 0.1 + gz * 0.5
 			Meshes.quad(st, Vector3(x0, 0.03, z0), Vector3(x0 + 0.5, 0.03, z0), Vector3(x0 + 0.5, 0.03, z0 + 0.5), Vector3(x0, 0.03, z0 + 0.5), c, c)
@@ -74,7 +82,7 @@ func setup(w: World, s: Dictionary, p: Player) -> void:
 	panel_mat = StandardMaterial3D.new()
 	panel_mat.albedo_color = Color(1, 0.98, 0.88)
 	panel_mat.emission_enabled = true
-	panel_mat.emission = Color(1, 0.96, 0.8)
+	panel_mat.emission = LIGHT
 	panel_mat.emission_energy_multiplier = 2.5
 	var pm := BoxMesh.new()
 	pm.size = Vector3(1.2, 0.04, 0.6)
@@ -87,7 +95,7 @@ func setup(w: World, s: Dictionary, p: Player) -> void:
 	light.position = Vector3(0, 2.6, 1.9)
 	light.omni_range = 13.0
 	light.light_energy = 1.5
-	light.light_color = Color(1.0, 0.95, 0.75)
+	light.light_color = LIGHT
 	add_child(light)
 
 	# the doorway: flat yellow light, the next level
@@ -119,7 +127,7 @@ func setup(w: World, s: Dictionary, p: Player) -> void:
 	glow_mat.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
 	glow_mat.disable_fog = true
 	glow_mat.albedo_texture = gt
-	glow_mat.albedo_color = Color(1.0, 0.9, 0.6, 0.0)
+	glow_mat.albedo_color = Color(LIGHT.r, LIGHT.g, LIGHT.b, 0.0)
 	var qm := QuadMesh.new()
 	qm.size = Vector2(18, 18)
 	qm.material = glow_mat
@@ -154,7 +162,7 @@ func begin() -> void:
 
 func activate() -> void:
 	on = true
-	door_mat.albedo_color = Color(1.0, 0.9, 0.55)
+	door_mat.albedo_color = DOOR
 	door_mat.disable_fog = true
 	hum.play()
 

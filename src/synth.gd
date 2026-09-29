@@ -19,6 +19,8 @@ static func all() -> Dictionary:
 		"crack": crack(),
 		"call": distant_call(),
 		"beep": beep(),
+		"growl": growl(),
+		"roar": roar(),
 		"croak": croak(),
 		"chitter": chitter(),
 	}
@@ -241,4 +243,37 @@ static func chitter() -> AudioStreamWAV:
 		var f := r.randf_range(2500.0, 4200.0)
 		for k in 180:
 			s[at + k] += amp * exp(-k / 25.0) * (r.randf_range(-1.0, 1.0) * 0.6 + sin(TAU * f * k / RATE))
+	return _wav(s)
+
+
+## A low, wet, rolling growl from deep in a big chest.
+static func growl() -> AudioStreamWAV:
+	var r := RandomNumberGenerator.new()
+	var s := _buf(2.2)
+	var lp := 0.0
+	var ph := 0.0
+	for i in s.size():
+		var t := float(i) / RATE
+		lp += (r.randf_range(-1.0, 1.0) - lp) * 0.04
+		ph += TAU * (48.0 + 6.0 * sin(t * 5.0)) / RATE
+		var flutter := 0.55 + 0.45 * sin(TAU * 17.0 * t + sin(t * 3.0))
+		var env := sin(PI * t / 2.2)
+		s[i] = (lp * 4.0 + sin(ph) * 0.5) * flutter * env * 0.6
+	return _wav(s)
+
+
+## The charge: a ragged bellowing roar.
+static func roar() -> AudioStreamWAV:
+	var r := RandomNumberGenerator.new()
+	var s := _buf(1.8)
+	var ph := 0.0
+	var lp := 0.0
+	for i in s.size():
+		var t := float(i) / RATE
+		var f := 140.0 + 90.0 * sin(PI * minf(t / 0.6, 1.0)) - t * 40.0
+		ph += TAU * f / RATE
+		lp += (r.randf_range(-1.0, 1.0) - lp) * 0.2
+		var env := minf(t / 0.08, 1.0) * exp(-t * 1.4)
+		var v := sin(ph) + 0.6 * sin(ph * 2.03) + 0.4 * sin(ph * 3.1) + lp * 2.0
+		s[i] = clampf(v * 1.8, -1.0, 1.0) * env * 0.7
 	return _wav(s)

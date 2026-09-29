@@ -96,6 +96,14 @@ func head_pos() -> Vector3:
 	return pos[0]
 
 
+func is_hunting() -> bool:
+	return state == "hunt"
+
+
+func film_points() -> Array:
+	return [pos[0] + Vector3(0, 0.3, 0), pos[N / 2] + Vector3(0, 0.3, 0)]
+
+
 func _physics_process(dt: float) -> void:
 	if not active:
 		return

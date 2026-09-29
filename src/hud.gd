@@ -29,6 +29,7 @@ var focus: Control
 var focus_name := ""
 var focus_prog := 0.0
 var flash := 0.0
+var stage_box: HBoxContainer
 
 
 func _ready() -> void:
@@ -87,12 +88,18 @@ func _ready() -> void:
 	var box := VBoxContainer.new()
 	box.set_anchors_preset(Control.PRESET_FULL_RECT)
 	box.alignment = BoxContainer.ALIGNMENT_CENTER
-	box.add_theme_constant_override("separation", 10)
+	box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	box.add_theme_constant_override("separation", 7)
 	card.add_child(box)
-	card_title = _label(box, "", 40, Vector2.ZERO)
+	card_title = _label(box, "", 34, Vector2.ZERO)
 	card_sub = _label(box, "", 16, Vector2.ZERO)
 	card_body = _label(box, "", 13, Vector2.ZERO)
 	card_foot = _label(box, "", 14, Vector2.ZERO)
+	stage_box = HBoxContainer.new()
+	stage_box.alignment = BoxContainer.ALIGNMENT_CENTER
+	stage_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	stage_box.add_theme_constant_override("separation", 14)
+	box.add_child(stage_box)
 	for l in [card_title, card_sub, card_body, card_foot]:
 		l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	card_sub.modulate = Color(0.9, 0.8, 0.5)
@@ -112,6 +119,27 @@ func add_touch(pad: Control) -> void:
 	add_child(pad)
 	move_child(pad, 1)
 	touch_mode = true
+
+
+## The level list on the title card. Locked levels show but can't be picked.
+func show_stages(stages: Array, pick: Callable) -> void:
+	for c in stage_box.get_children():
+		c.queue_free()
+	if stages.is_empty():
+		return
+	var head := _label(stage_box, "layers:", 12, Vector2.ZERO)
+	head.modulate = Color(1, 1, 1, 0.5)
+	for st in stages:
+		var b := Button.new()
+		b.text = st.label
+		b.flat = true
+		b.disabled = st.locked
+		b.add_theme_font_size_override("font_size", 12)
+		b.add_theme_color_override("font_color", Color(1, 0.85, 0.45) if st.current else Color(0.8, 0.8, 0.75))
+		b.add_theme_color_override("font_hover_color", Color(1, 1, 1))
+		b.add_theme_color_override("font_disabled_color", Color(0.4, 0.4, 0.38))
+		b.pressed.connect(pick.bind(int(st.n)))
+		stage_box.add_child(b)
 
 
 func set_shots(shots: Array) -> void:

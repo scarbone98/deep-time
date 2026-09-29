@@ -450,3 +450,207 @@ static func scorpion_tail(telson := false) -> ArrayMesh:
 	else:
 		tube(st, [Vector3.ZERO, Vector3(0, 0, 0.16)], [0.07, 0.06], [shell, shell.lightened(0.1)], 6, false, 0.9)
 	return finish(st, chitin())
+
+
+# ---------------------------------------------------------------- Permian
+
+## A sandstone block with red and ochre strata. `base` is its bottom centre.
+static func rock(st: SurfaceTool, rng: RandomNumberGenerator, base: Vector3, size: Vector3, yaw: float) -> void:
+	var b := Basis(Vector3.UP, yaw)
+	var bands := maxi(2, int(size.y / 0.7))
+	var shrink := rng.randf_range(0.6, 0.9)
+	var cols := [Color(0.45, 0.2, 0.12), Color(0.56, 0.31, 0.18), Color(0.4, 0.18, 0.11), Color(0.6, 0.38, 0.22)]
+	var corners := [Vector2(-1, -1), Vector2(1, -1), Vector2(1, 1), Vector2(-1, 1)]
+	var jit := []
+	for k in 4:
+		jit.append(Vector2(rng.randf_range(0.85, 1.1), rng.randf_range(0.85, 1.1)))
+	var ring := func(t: float) -> Array:
+		var out := []
+		var sc := lerpf(1.0, shrink, t) * (1.0 + sin(t * 17.0) * 0.04)
+		for k in 4:
+			var c: Vector2 = corners[k] * jit[k] * sc
+			out.append(base + b * Vector3(c.x * size.x * 0.5, t * size.y, c.y * size.z * 0.5))
+		return out
+	var prev: Array = ring.call(0.0)
+	for i in bands:
+		var t := float(i + 1) / bands
+		var cur: Array = ring.call(t)
+		var col: Color = cols[(i + rng.randi() % 2) % cols.size()]
+		for k in 4:
+			quad(st, prev[k], prev[(k + 1) % 4], cur[(k + 1) % 4], cur[k], col, col.darkened(0.08))
+		prev = cur
+	var top := Color(0.62, 0.42, 0.26)
+	quad(st, prev[0], prev[1], prev[2], prev[3], top, top)
+
+
+## Glossopteris: a stocky tree with drooping tongue-shaped leaves.
+static func glossopteris(rng: RandomNumberGenerator) -> ArrayMesh:
+	var st := begin()
+	var h := rng.randf_range(4.5, 7.0)
+	var bark := Color(0.24, 0.18, 0.13)
+	var top := Vector3(rng.randf_range(-0.4, 0.4), h, rng.randf_range(-0.4, 0.4))
+	tube(st, [Vector3.ZERO, Vector3(0, h * 0.5, 0), top], [0.4, 0.25, 0.18], [bark, bark, bark.lightened(0.1)], 6, true)
+	for k in 7:
+		var a := TAU * k / 7.0 + rng.randf() * 0.4
+		var d := Vector3(cos(a), rng.randf_range(0.2, 0.8), sin(a)).normalized()
+		var e := top + d * rng.randf_range(1.2, 2.2)
+		tube(st, [top - Vector3(0, 0.6, 0), e], [0.12, 0.05], [bark, bark], 4)
+		for l in 9:
+			var ld := (d + Vector3(rng.randf_range(-0.8, 0.8), rng.randf_range(-1.2, -0.2), rng.randf_range(-0.8, 0.8))).normalized()
+			var c := Color(0.22, 0.26, 0.1).lerp(Color(0.34, 0.33, 0.14), rng.randf())
+			var side := ld.cross(Vector3.UP)
+			if side.length() < 0.05:
+				side = Vector3.RIGHT
+			side = side.normalized() * 0.09
+			var L := rng.randf_range(0.5, 0.8)
+			var m := e + ld * L * 0.45
+			tri(st, e, m + side, m - side, c)
+			tri(st, m + side, e + ld * L, m - side, c.darkened(0.15))
+	return finish(st, veg())
+
+
+## A dead conifer, bleached and bare.
+static func snag(rng: RandomNumberGenerator) -> ArrayMesh:
+	var st := begin()
+	var h := rng.randf_range(6.0, 10.0)
+	var c := Color(0.5, 0.45, 0.38)
+	var lean := Vector3(rng.randf_range(-0.8, 0.8), 0, rng.randf_range(-0.8, 0.8))
+	tube(st, [Vector3.ZERO, Vector3(0, h * 0.5, 0) + lean * 0.3, Vector3(0, h, 0) + lean], [0.3, 0.2, 0.04], [c.darkened(0.3), c, c], 6)
+	for k in 6:
+		var y := h * rng.randf_range(0.35, 0.85)
+		var a := rng.randf() * TAU
+		var o := Vector3(0, y, 0) + lean * (y / h)
+		tube(st, [o, o + Vector3(cos(a), rng.randf_range(-0.4, 0.2), sin(a)) * rng.randf_range(0.6, 1.6)], [0.06, 0.01], [c, c], 3)
+	return finish(st, veg())
+
+
+static func scrub(rng: RandomNumberGenerator) -> ArrayMesh:
+	var st := begin()
+	for k in 14:
+		var a := rng.randf() * TAU
+		var dir := Vector3(cos(a), rng.randf_range(0.5, 1.4), sin(a)).normalized()
+		var c := Color(0.3, 0.26, 0.13).lerp(Color(0.42, 0.34, 0.18), rng.randf())
+		_blade(st, Vector3.ZERO, dir, rng.randf_range(0.4, 0.8), 0.03, 0.08, c)
+	return finish(st, veg())
+
+
+## Something big died here: a spine, a rib cage, a skull.
+static func skeleton(rng: RandomNumberGenerator) -> ArrayMesh:
+	var st := begin()
+	var bone := Color(0.78, 0.72, 0.6)
+	var spine := []
+	var rad := []
+	var cols := []
+	for i in 12:
+		spine.append(Vector3(sin(i * 0.4) * 0.3, 0.35 + sin(i * 0.35) * 0.2, i * 0.3 - 1.6))
+		rad.append(0.06)
+		cols.append(bone.darkened(0.1 * (i % 2)))
+	tube(st, spine, rad, cols, 4)
+	for i in range(2, 8):
+		var p: Vector3 = spine[i]
+		for sd in [-1.0, 1.0]:
+			var w := 0.55 - absf(i - 4.5) * 0.06
+			tube(st, [p, p + Vector3(w * sd, 0.1, 0.05), p + Vector3(w * 1.3 * sd, -0.35, 0.1)], [0.035, 0.03, 0.02], [bone, bone, bone.darkened(0.2)], 3)
+	var skull: Vector3 = spine[0] + Vector3(0, 0.0, -0.3)
+	tube(st, [skull, skull + Vector3(0, -0.05, -0.55)], [0.18, 0.07], [bone, bone.darkened(0.15)], 5, false, 0.7)
+	octa(st, skull + Vector3(0.1, 0.08, -0.1), 0.05, Color(0.1, 0.08, 0.06))
+	octa(st, skull + Vector3(-0.1, 0.08, -0.1), 0.05, Color(0.1, 0.08, 0.06))
+	return finish(st, veg())
+
+
+static func burrow() -> ArrayMesh:
+	var st := begin()
+	var dirt := Color(0.4, 0.22, 0.13)
+	var n := 10
+	for k in n:
+		var a0 := TAU * k / n
+		var a1 := TAU * (k + 1) / n
+		var o0 := Vector3(cos(a0), 0, sin(a0)) * 1.3
+		var o1 := Vector3(cos(a1), 0, sin(a1)) * 1.3
+		var i0 := Vector3(cos(a0), 0.35, sin(a0)) * Vector3(0.4, 1, 0.4)
+		var i1 := Vector3(cos(a1), 0.35, sin(a1)) * Vector3(0.4, 1, 0.4)
+		quad(st, o0, o1, i1, i0, dirt, dirt.lightened(0.1))
+		tri(st, i0, i1, Vector3(0, 0.05, 0), Color(0.03, 0.02, 0.02))
+	return finish(st, veg())
+
+
+## Inostrancevia: a gorgonopsid the size of a bear, all skull and sabres.
+## Forward is -Z; hips at z = +/-0.7. Returns {"body", "leg_f", "leg_b"}.
+static func gorgon() -> Dictionary:
+	var st := begin()
+	var hide := Color(0.3, 0.24, 0.19)
+	var belly := Color(0.46, 0.38, 0.3)
+	var stripe := Color(0.16, 0.12, 0.1)
+	var pts := [Vector3(0, 0.05, 1.9), Vector3(0, 0.12, 1.3), Vector3(0, 0.28, 0.7), Vector3(0, 0.36, 0.1),
+		Vector3(0, 0.33, -0.5), Vector3(0, 0.3, -0.9), Vector3(0, 0.38, -1.25)]
+	var rad := [0.04, 0.14, 0.38, 0.46, 0.42, 0.26, 0.24]
+	var cols := []
+	for i in pts.size():
+		cols.append(stripe if i % 2 == 1 and i > 1 else hide)
+	tube(st, pts, rad, cols, 8, true, 0.85)
+	quad(st, Vector3(-0.3, 0.05, 0.6), Vector3(0.3, 0.05, 0.6), Vector3(0.3, 0.05, -0.4), Vector3(-0.3, 0.05, -0.4), belly, belly)
+	# the skull: long, deep, with a gape of sabres
+	var sk := [Vector3(0, 0.42, -1.3), Vector3(0, 0.42, -1.6), Vector3(0, 0.36, -1.95), Vector3(0, 0.3, -2.2)]
+	tube(st, sk, [0.26, 0.26, 0.2, 0.12], [hide, hide.darkened(0.1), hide, hide.lightened(0.05)], 7, false, 1.2)
+	var jaw := [Vector3(0, 0.2, -1.45), Vector3(0, 0.14, -1.9), Vector3(0, 0.16, -2.1)]
+	tube(st, jaw, [0.14, 0.1, 0.06], [belly, belly, belly], 6, false, 0.8)
+	var tooth := Color(0.92, 0.88, 0.76)
+	for sd in [-1.0, 1.0]:
+		tube(st, [Vector3(0.1 * sd, 0.24, -2.0), Vector3(0.11 * sd, -0.05, -2.02), Vector3(0.1 * sd, -0.12, -1.98)],
+			[0.035, 0.02, 0.002], [tooth, tooth, tooth], 4)
+		octa(st, Vector3(0.17 * sd, 0.55, -1.65), 0.045, Color(0.85, 0.6, 0.15))
+	var body := finish(st, chitin())
+	return {"body": body, "leg_f": _gorgon_leg(false), "leg_b": _gorgon_leg(true)}
+
+
+static func _gorgon_leg(back: bool) -> ArrayMesh:
+	var st := begin()
+	var c := Color(0.28, 0.22, 0.18)
+	var knee := Vector3(0.12, -0.35, 0.18 if back else -0.12)
+	var foot := Vector3(0.08, -0.72, 0.0)
+	tube(st, [Vector3.ZERO, knee, foot, foot + Vector3(0, 0, -0.18)], [0.15, 0.09, 0.07, 0.04], [c, c, c.darkened(0.2), c.darkened(0.3)], 5)
+	return finish(st, chitin())
+
+
+## Scutosaurus: a squat armoured grazer, knobbly and slow.
+static func scutosaurus() -> Dictionary:
+	var st := begin()
+	var hide := Color(0.4, 0.33, 0.24)
+	var pts := [Vector3(0, 0.15, 1.3), Vector3(0, 0.35, 0.9), Vector3(0, 0.55, 0.3), Vector3(0, 0.6, -0.3),
+		Vector3(0, 0.5, -0.8), Vector3(0, 0.45, -1.05), Vector3(0, 0.4, -1.35)]
+	var rad := [0.05, 0.3, 0.62, 0.66, 0.5, 0.25, 0.22]
+	var cols := []
+	for i in pts.size():
+		cols.append(hide.lerp(Color(0.3, 0.25, 0.18), float(i % 2)))
+	tube(st, pts, rad, cols, 9, true, 0.8)
+	var knob := Color(0.5, 0.42, 0.3)
+	var r := RandomNumberGenerator.new()
+	r.seed = 4
+	for k in 26:
+		var z := r.randf_range(-0.7, 0.8)
+		var a := r.randf_range(0.3, PI - 0.3)
+		octa(st, Vector3(cos(a) * 0.6, 0.55 + sin(a) * 0.45, z), r.randf_range(0.05, 0.1), knob)
+	for sd in [-1.0, 1.0]:
+		octa(st, Vector3(0.22 * sd, 0.45, -1.3), 0.08, knob)
+	return {"body": finish(st, chitin()), "leg": _stumpy_leg(Color(0.34, 0.28, 0.2), 0.5, 0.12)}
+
+
+static func _stumpy_leg(c: Color, h: float, r: float) -> ArrayMesh:
+	var st := begin()
+	tube(st, [Vector3.ZERO, Vector3(0.1, -h * 0.5, 0), Vector3(0.05, -h, 0), Vector3(0.05, -h, -r)], [r, r * 0.8, r * 0.75, r * 0.4], [c, c, c.darkened(0.2), c.darkened(0.3)], 5)
+	return finish(st, chitin())
+
+
+## Dicynodon: a tusked, beaked burrower.
+static func dicynodon() -> ArrayMesh:
+	var st := begin()
+	var hide := Color(0.48, 0.36, 0.26)
+	var pts := [Vector3(0, 0.12, 0.55), Vector3(0, 0.25, 0.3), Vector3(0, 0.3, -0.05), Vector3(0, 0.26, -0.35), Vector3(0, 0.26, -0.55), Vector3(0, 0.2, -0.72)]
+	tube(st, pts, [0.05, 0.22, 0.27, 0.2, 0.17, 0.08], [hide, hide, hide.darkened(0.1), hide, hide, Color(0.3, 0.25, 0.2)], 7, true, 0.85)
+	var tusk := Color(0.9, 0.86, 0.74)
+	for sd in [-1.0, 1.0]:
+		tube(st, [Vector3(0.07 * sd, 0.16, -0.6), Vector3(0.08 * sd, 0.02, -0.64)], [0.025, 0.004], [tusk, tusk], 4)
+		octa(st, Vector3(0.1 * sd, 0.33, -0.5), 0.03, Color(0.1, 0.07, 0.05))
+		for z in [-0.25, 0.25]:
+			tube(st, [Vector3(0.18 * sd, 0.12, z), Vector3(0.28 * sd, 0.0, z - 0.05), Vector3(0.3 * sd, -0.05, z - 0.1)], [0.06, 0.05, 0.03], [hide, hide, hide.darkened(0.2)], 4)
+	return finish(st, chitin())

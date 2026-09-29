@@ -1,7 +1,8 @@
 class_name World
 extends Node3D
-## The Coal Forest: a heightfield swamp with black pools, scale trees,
-## horsetail thickets and a carpet of ferns. New layout every run.
+## The level's ground and everything rooted in it. New layout every run.
+## Carboniferous: a swamp with black pools, scale trees, horsetails, ferns.
+## Permian: red dunes and dry washes, sandstone outcrops, Glossopteris, bones.
 
 const HALF := 160.0
 const STEP := 2.0
@@ -18,18 +19,53 @@ var exit_yaw := 0.0
 var _colliders: StaticBody3D
 var lite := false  # phones: shorter draw distances
 var log_spots: Array = []  # [position, yaw] per fallen log
+var burrows: Array = []  # Permian burrow mouths
+var era := "carboniferous"
 
 
-func generate(seed_: int) -> void:
+func generate(seed_: int, era_id: String) -> void:
+	era = era_id
 	rng.seed = seed_
+	_colliders = StaticBody3D.new()
+	add_child(_colliders)
+	if era == "permian":
+		_heights_permian(seed_)
+		_pick_points()
+		_terrain()
+		_rocks()
+		_flora_permian()
+		return
 	_heights(seed_)
 	_pick_points()
 	_terrain()
 	_water()
-	_colliders = StaticBody3D.new()
-	add_child(_colliders)
 	_flora()
 	_logs()
+
+
+func _heights_permian(seed_: int) -> void:
+	var dune := FastNoiseLite.new()
+	dune.seed = seed_
+	dune.frequency = 0.006
+	var ripple := FastNoiseLite.new()
+	ripple.seed = seed_ + 1
+	ripple.frequency = 0.03
+	var wash := FastNoiseLite.new()
+	wash.seed = seed_ + 2
+	wash.frequency = 0.008
+	wash.fractal_octaves = 2
+	heights.resize((N + 1) * (N + 1))
+	for j in N + 1:
+		for i in N + 1:
+			var x := -HALF + i * STEP
+			var z := -HALF + j * STEP
+			var h := 4.0 + dune.get_noise_2d(x, z) * 7.0 + absf(ripple.get_noise_2d(x, z)) * 1.2
+			var w := absf(wash.get_noise_2d(x, z))
+			h -= smoothstep(0.08, 0.0, w) * 2.2  # dry riverbeds
+			var rim := maxf(absf(x), absf(z)) - (BOUND - 4.0)
+			if rim > 0.0:
+				h += rim * 0.4
+			heights[j * (N + 1) + i] = maxf(h, 0.3)
 
 
 func _heights(seed_: int) -> void:
@@ -76,7 +112,7 @@ func height_at(x: float, z: float) -> float:
 func _pick_points() -> void:
 	for tries in 2000:
 		var s := Vector3(rng.randf_range(-125, 125), 0, rng.randf_range(-125, 125))
-		if height_at(s.x, s.z) < 0.25:
+		if height_at(s.x, s.z) < 0.25 or _in_rim(s):
 			continue
 		var ang := rng.randf() * TAU
 		var e := s + Vector3(cos(ang), 0, sin(ang)) * rng.randf_range(130.0, 165.0)
@@ -116,7 +152,10 @@ func _terrain() -> void:
 			var h := heights[j * (N + 1) + i]
 			var n := tint.get_noise_2d(x, z) * 0.5 + 0.5
 			var col := Color(0.14, 0.12, 0.07).lerp(Color(0.1, 0.15, 0.06), n)
-			if h < 0.3:
+			if era == "permian":
+				col = Color(0.46, 0.22, 0.12).lerp(Color(0.56, 0.36, 0.2), n)
+				col = col.lerp(Color(0.3, 0.2, 0.16), clampf((2.0 - h) / 2.0, 0.0, 1.0))
+			elif h < 0.3:
 				col = col.lerp(Color(0.06, 0.06, 0.04), clampf((0.3 - h) / 0.8, 0.0, 1.0))
 			st.set_color(col)
 			st.add_vertex(Vector3(x, h, z))
@@ -325,3 +364,120 @@ func pools(count: int) -> Array:
 			if ok:
 				out.append(p)
 	return out
+
+
+func _in_rim(p: Vector3) -> bool:
+	return absf(p.x) > BOUND - 12.0 or absf(p.z) > BOUND - 12.0
+
+
+## Sandstone outcrops: the only cover in the Red Waste.
+func _rocks() -> void:
+	var placed := 0
+	for tries in 3000:
+		if placed >= 130:
+			break
+		var c := Vector3(rng.randf_range(-BOUND + 6, BOUND - 6), 0, rng.randf_range(-BOUND + 6, BOUND - 6))
+		if _clear(c.x, c.z, 10.0):
+			continue
+		var st := Meshes.begin()
+		var blocks := rng.randi_range(2, 5)
+		for b in blocks:
+			var off := Vector3(rng.randf_range(-4, 4), 0, rng.randf_range(-4, 4))
+			var p := c + off
+			var size := Vector3(rng.randf_range(2.0, 5.0), rng.randf_range(2.0, 7.5), rng.randf_range(2.0, 4.5))
+			if b == 0:
+				size.y = rng.randf_range(4.0, 9.0)
+			var yaw := rng.randf() * TAU
+			var base := height_at(p.x, p.z) - 0.6
+			Meshes.rock(st, rng, Vector3(off.x, base, off.z), size, yaw)
+			var cs := CollisionShape3D.new()
+			var bx := BoxShape3D.new()
+			bx.size = size
+			cs.shape = bx
+			cs.position = Vector3(p.x, base + size.y * 0.5, p.z)
+			cs.rotation.y = yaw
+			_colliders.add_child(cs)
+			_add_trunk(p.x, p.z, maxf(size.x, size.z) * 0.5, false)
+		var mi := MeshInstance3D.new()
+		mi.mesh = Meshes.finish(st, Meshes.veg())
+		mi.position = Vector3(c.x, 0, c.z)
+		mi.visibility_range_end = 140.0
+		add_child(mi)
+		placed += 1
+
+
+func _flora_permian() -> void:
+	var trees := [Meshes.glossopteris(rng), Meshes.glossopteris(rng), Meshes.snag(rng)]
+	var scrub := [Meshes.scrub(rng), Meshes.scrub(rng), Meshes.scrub(rng)]
+	var bones := Meshes.skeleton(rng)
+	var mound := Meshes.burrow()
+	var buckets := {}
+	var put := func(kind: String, mesh: Mesh, x: float, z: float, y: float, s: float) -> void:
+		var cs := 40.0
+		var key := [kind, mesh, floori(x / cs), floori(z / cs)]
+		var k := str(key[0]) + str(mesh.get_instance_id()) + "|" + str(key[2]) + "|" + str(key[3])
+		if not buckets.has(k):
+			buckets[k] = {"mesh": mesh, "cx": key[2], "cz": key[3], "xf": [], "vis": 70.0 if kind == "scrub" else 130.0}
+		var b := Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3.ONE * s)
+		buckets[k].xf.append(Transform3D(b, Vector3(x, y, z)))
+	# trees, mostly along the washes where there was water once
+	for tries in 900:
+		var x := rng.randf_range(-HALF, HALF)
+		var z := rng.randf_range(-HALF, HALF)
+		var h := height_at(x, z)
+		if (h > 2.6 and rng.randf() < 0.85) or _clear(x, z, 4.0):
+			continue
+		var v := rng.randi() % trees.size()
+		var s := rng.randf_range(0.8, 1.3)
+		put.call("tree", trees[v], x, z, h - 0.2, s)
+		_add_trunk(x, z, 0.35 * s)
+	for gz in range(-int(HALF), int(HALF), 3):
+		for gx in range(-int(HALF), int(HALF), 3):
+			if rng.randf() > 0.4:
+				continue
+			var x := gx + rng.randf() * 3.0
+			var z := gz + rng.randf() * 3.0
+			if _clear(x, z, 1.5):
+				continue
+			put.call("scrub", scrub[rng.randi() % scrub.size()], x, z, height_at(x, z), rng.randf_range(0.6, 1.4))
+	for k in 26:
+		var x := rng.randf_range(-BOUND + 10, BOUND - 10)
+		var z := rng.randf_range(-BOUND + 10, BOUND - 10)
+		put.call("bones", bones, x, z, height_at(x, z) - 0.1, rng.randf_range(0.8, 1.6))
+	# burrow colonies
+	for c in 7:
+		var cx := rng.randf_range(-BOUND + 20, BOUND - 20)
+		var cz := rng.randf_range(-BOUND + 20, BOUND - 20)
+		if Vector2(cx - spawn.x, cz - spawn.z).length() < 30.0:
+			continue
+		for k in rng.randi_range(3, 5):
+			var p := Vector3(cx + rng.randf_range(-7, 7), 0, cz + rng.randf_range(-7, 7))
+			p.y = height_at(p.x, p.z)
+			burrows.append(p)
+			put.call("mound", mound, p.x, p.z, p.y - 0.05, 1.0)
+	for k in buckets:
+		var bk: Dictionary = buckets[k]
+		var center := Vector3((int(bk.cx) + 0.5) * 40.0, 0, (int(bk.cz) + 0.5) * 40.0)
+		var arr: Array = bk.xf
+		var mm := MultiMesh.new()
+		mm.transform_format = MultiMesh.TRANSFORM_3D
+		mm.mesh = bk.mesh
+		mm.instance_count = arr.size()
+		for i in arr.size():
+			var tr: Transform3D = arr[i]
+			tr.origin -= center
+			mm.set_instance_transform(i, tr)
+		var mi := MultiMeshInstance3D.new()
+		mi.multimesh = mm
+		mi.position = center
+		mi.visibility_range_end = (float(bk.vis) * (0.75 if lite else 1.0))
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		add_child(mi)
+
+
+## Line of sight between two points, blocked by rocks and trunks.
+func clear_line(a: Vector3, b: Vector3) -> bool:
+	var q := PhysicsRayQueryParameters3D.create(a, b)
+	q.collide_with_areas = false
+	var hit := get_world_3d().direct_space_state.intersect_ray(q)
+	return hit.is_empty() or not (hit.collider == _colliders)

@@ -98,6 +98,7 @@ var rumble: AudioStreamPlayer
 var banked_flash := 0.0
 var jumped_since_send := false
 var home_value := 0  # carried home through the door this drop
+var outpost_tripped := false
 var quota_msg := ""
 
 
@@ -232,6 +233,8 @@ func _build(view: bool) -> void:
 	world.lite = touch
 	world.process_mode = Node.PROCESS_MODE_PAUSABLE
 	add_child(world)
+	if era.has("exit") and not era.exit.is_empty():
+		world.look = era.exit
 	world.generate(seed_, era.id)
 	if view:
 		_environment()
@@ -287,6 +290,18 @@ func _place_loot(lair: Vector3) -> void:
 					if world.height_at(at.x, at.z) < 0.05:
 						at = world.shore_near(at, rng)
 					nest_total += 1
+				"outpost":
+					var ds: Array = world.outpost.dead_ends if world.outpost else []
+					if ds.is_empty():
+						at = world.dry_point(rng)
+					else:
+						at = ds[(k * 7 + rng.randi() % 3) % ds.size()] + Vector3(rng.randf_range(-0.6, 0.6), 0, rng.randf_range(-0.6, 0.6))
+				"camp":
+					if world.camp_spots.is_empty():
+						at = world.dry_point(rng)
+					else:
+						var a := rng.randf() * TAU
+						at = world.camp_spots[k % world.camp_spots.size()] + Vector3(cos(a), 0, sin(a)) * rng.randf_range(1.8, 3.0)
 				"near_pool":
 					if pools.is_empty():
 						at = world.dry_point(rng)
@@ -638,6 +653,17 @@ func _apply_dev_flags() -> void:
 		var at := local.position + fwd * float(flags.rex)
 		at.y = world.height_at(at.x, at.z)
 		_spawn_hunter(at, fwd.rotated(Vector3.UP, 1.4), "rex")
+	if flags.has("outpost") and world.outpost:  # dev: at the outpost door (outpost=D metres out; negative is inside)
+		var o := world.outpost
+		var p := o.to_global_pre(Vector3(0, 0, o.n * Outpost.C * 0.5 + float(flags.outpost if flags.outpost != "1" else "8")))
+		p.y = world.height_at(p.x, p.z)
+		local.position = p
+		local.yaw = o.rotation.y
+	if flags.has("camp") and not world.camp_spots.is_empty():
+		var c: Vector3 = world.camp_spots[0]
+		local.position = c + Vector3(0, 0, 7)
+		local.position.y = world.height_at(local.position.x, local.position.z)
+		local.yaw = 0.0
 	if flags.has("pad"):  # dev: start on the rift's carpet, facing out
 		local.position = exit_node.to_global(Vector3(0.8, 0, 2.5))
 		local.yaw = world.exit_yaw + PI
@@ -961,6 +987,15 @@ func _physics_process(dt: float) -> void:
 				_through(p)
 		_rift_clock()
 		_fly_loot()
+		if not outpost_tripped and world.outpost:
+			for p: Player in alive_players():
+				if world.outpost.contains(p.position):
+					outpost_tripped = true
+					var door := world.outpost.to_global_pre(Vector3(0, 0, world.outpost.n * Outpost.C * 0.5))
+					for m in hunters:
+						m.alarm(door)
+					_emit(["outpost", p.id])
+					break
 	if mode == "server":
 		tick += 1
 		if tick % SNAP_EVERY == 0:
@@ -1493,6 +1528,14 @@ func _on_event(ev: Array) -> void:
 			elif lvl == 3:
 				hud.say([["THE RIFT IS CLOSING", 4.0]])
 				_start_rumble(-4.0)
+		"outpost":
+			if world.outpost:
+				world.outpost.trip()
+			_sound_at(sounds.crack, world.outpost_at, 20.0)
+			if int(ev[1]) == my_id:
+				hud.say([["the door banged shut behind you.", 3.0], ["something outside heard it.", 3.5]])
+			else:
+				hud.say([["%s went into the outpost." % _name(int(ev[1])), 3.0]])
 		"collapse":
 			if rumble:
 				rumble.stop()

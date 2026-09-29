@@ -68,6 +68,11 @@ var last_jump := false
 var land_dip := 0.0
 var fov_kick := 0.0
 var shake := 0.0  # big footsteps nearby
+var cur_spd := 0.0  # eases toward walk/run speed: a sprint winds up
+var jump_buf := 0.0  # a jump pressed just before landing still counts
+var stam_delay := 0.0  # stamina waits a moment before it comes back
+var bob_amp := 0.0
+var tilt := 0.0
 
 
 func setup(w: World, s: Dictionary, is_view := true) -> void:
@@ -249,19 +254,31 @@ func _tick(dt: float) -> void:
 		spd = RUN
 	spd *= lerpf(1.0, 0.55, clampf(depth / 0.9, 0.0, 1.0))
 	spd *= clampf(1.0 - carry * 0.07, 0.6, 1.0)
+	# a sprint winds up over a third of a second; slowing down is quicker
+	cur_spd = move_toward(cur_spd, spd, dt * (10.0 if spd > cur_spd else 20.0))
 	if running:
 		stamina -= dt / 7.0
+		stam_delay = 0.8
+	elif stam_delay > 0.0:
+		stam_delay -= dt
 	else:
-		stamina += dt / (9.0 if inp.length() > 0.1 else 6.0)
+		stamina += dt / (6.0 if inp.length() > 0.1 else 4.0)
 	stamina = clampf(stamina, 0.0, 1.0)
 	if stamina <= 0.0:
 		exhausted = true
 	elif exhausted and stamina > 0.45:
 		exhausted = false
 
+	# Quake-style: reach full speed in about a tenth of a second, stop almost
+	# as fast, and keep your momentum in the air
 	var wish := Basis(Vector3.UP, yaw) * Vector3(inp.x, 0, inp.y)
-	velocity = velocity.lerp(wish * spd, 1.0 - exp(-dt * (14.0 if grounded else 4.0)))
-	velocity.y = 0.0
+	var want := wish * cur_spd
+	var hv := Vector3(velocity.x, 0.0, velocity.z)
+	var accel := 45.0 if inp.length() > 0.05 else 32.0
+	if not grounded:
+		accel = 9.0
+	hv = hv.move_toward(want, accel * dt)
+	velocity = hv
 	# move_and_slide steps by the physics delta; scale so a frame of any
 	# length moves exactly its own share
 	var pdt := get_physics_process_delta_time()
@@ -280,7 +297,11 @@ func _tick(dt: float) -> void:
 	# jumping and landing
 	last_jump = false
 	var ground := world.height_at(position.x, position.z)
-	if jump_queued and grounded and control and not crouching and stamina > 0.08:
+	if jump_queued:
+		jump_buf = 0.14
+	jump_buf = maxf(0.0, jump_buf - dt)
+	if jump_buf > 0.0 and grounded and control and not crouching and stamina > 0.08:
+		jump_buf = 0.0
 		vy = JUMP * clampf(1.0 - carry * 0.06, 0.7, 1.0)
 		grounded = false
 		last_jump = true
@@ -301,11 +322,12 @@ func _tick(dt: float) -> void:
 
 	var hs := Vector2(velocity.x, velocity.z).length()
 	moving = hs > 0.4
-	var stride_len := 0.6 if crouching else (1.3 if running else 0.85)
-	stride += hs * dt
-	bob += hs * dt / stride_len * PI
-	if stride >= stride_len:
-		stride -= stride_len
+	# one footstep per half bob cycle, landing at the bottom of each dip
+	var stride_len := 0.65 if crouching else (1.45 if running else 0.95)
+	var was := bob
+	if grounded:
+		bob += hs * dt / stride_len * PI
+	if int(floor(bob / PI)) != int(floor(was / PI)) and hs > 0.5:
 		_step(depth, running)
 
 	# breathing: loud when winded, and loud enough to be felt nearby
@@ -336,21 +358,29 @@ func _tick(dt: float) -> void:
 
 	# camera: crouch height, walk bob, handheld drift
 	eye = lerpf(eye, 1.0 if crouching else 1.6, 1.0 - exp(-dt * 8.0))
-	var amp := 0.025 if not running else 0.045
+	# separate bob for each gait, eased in and out so starting and stopping
+	# never snaps; a little side-to-side sway on top
+	var want_amp := 0.0
+	if grounded and hs > 0.5:
+		want_amp = 0.014 if crouching else (0.05 if running else 0.028)
+	bob_amp = lerpf(bob_amp, want_amp, 1.0 - exp(-dt * 8.0))
 	land_dip = lerpf(land_dip, 0.0, 1.0 - exp(-dt * 8.0))
-	head.position.y = eye + absf(sin(bob)) * amp * minf(hs, 1.0) * (1.0 if grounded else 0.0) - land_dip
+	head.position.y = eye - absf(sin(bob)) * bob_amp * 1.4 + bob_amp * 0.7 - land_dip
+	head.position.x = sin(bob) * bob_amp * 0.45
 	rotation.y = yaw
 	head.rotation.x = pitch
 	# portrait phones: hold the horizontal view instead of the vertical one
 	var vs := get_viewport().get_visible_rect().size
-	fov_kick = lerpf(fov_kick, 7.0 if running and hs > 5.0 else 0.0, 1.0 - exp(-dt * 6.0))
+	fov_kick = lerpf(fov_kick, 8.0 * clampf((hs - WALK) / (RUN - WALK), 0.0, 1.0), 1.0 - exp(-dt * 5.0))
 	if vs.y > vs.x:
 		cam.keep_aspect = Camera3D.KEEP_WIDTH
-		cam.fov = 80.0 + fov_kick
+		cam.fov = 84.0 + fov_kick
 	else:
 		cam.keep_aspect = Camera3D.KEEP_HEIGHT
-		cam.fov = 75.0 + fov_kick
-	cam.rotation.z = sin(bob) * 0.004 + sin(t * 0.7) * 0.002
+		cam.fov = 80.0 + fov_kick
+	# lean a touch into strafes
+	tilt = lerpf(tilt, -inp.x * 0.022 * clampf(hs / WALK, 0.0, 1.0), 1.0 - exp(-dt * 7.0))
+	cam.rotation.z = tilt + sin(bob) * bob_amp * 0.06 + sin(t * 0.7) * 0.0015
 	cam.rotation.x = sin(t * 0.53) * 0.002 * (1.0 + winded * 3.0)
 	cam.rotation.y = 0.0
 	if shake > 0.01:
@@ -363,7 +393,7 @@ func _tick(dt: float) -> void:
 	# the held item: bobs with your step, dips when you swap or land
 	hand_swap = maxf(0.0, hand_swap - dt)
 	var base := Vector3(0.0, -0.52, -0.62) if hand_two else Vector3(0.3, -0.32, -0.52)
-	hand.position = base + Vector3(sin(bob) * 0.012, absf(sin(bob)) * 0.014 - hand_swap * 1.2 - land_dip * 0.5, 0.0)
+	hand.position = base + Vector3(sin(bob) * bob_amp * 0.5 - tilt * 0.4, -absf(sin(bob)) * bob_amp * 0.5 - hand_swap * 1.2 - land_dip * 0.5, 0.0)
 
 
 func _step(depth: float, running: bool) -> void:

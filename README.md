@@ -17,6 +17,9 @@ Lethal Company in deep time. You start in the **Chrono Hub**, a little station f
 - **The rift stays open where you land, for 7 minutes.** Set loot down on the rift's carpet, and everything on the carpet comes home when the crew leaves. Press E at the door to leave; anything in your hands comes too.
   - Halfway through, the hunters get bolder. In the last minute the rift strains.
   - When it collapses, anyone still out is lost, with whatever they carry.
+- **Earlier crews didn't all make it back.** Every era has:
+  - a **lost Bureau outpost**: a maze of yellow-wallpapered Backrooms corridors under flickering lights, with the best loot (Chrono Cores, lost tapes) in its dead ends. The first time anyone steps inside, the lights die and the hunters hear the door.
+  - **abandoned camps**, each with a collapsed tent, crates, a fallen crew member, and their badges and tapes.
 - **Risk:** cheap loot is near the rift, eggs are far out in nests, and taking an egg brings the parent. Loot glints through the fog.
 - **The SHOP kiosk** sells cosmetics for your chibi time-traveller (suits, hats, face gear) and gear: squeaky decoys (Q), a bigger pack (+1 slot) and a long-life battery.
 

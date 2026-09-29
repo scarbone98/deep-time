@@ -35,6 +35,12 @@ var hub_radius := 0.0  # the hub: walkable disc instead of a square
 var spots := {}  # hub: named interaction points
 var ring: Node3D
 var quota_board: Label3D
+var look := {"wall": Color(0.74, 0.66, 0.36), "wall2": Color(0.68, 0.6, 0.31), "floor": Color(0.52, 0.46, 0.28)}
+var outpost: Outpost
+var outpost_at := Vector3.ZERO
+var camp_spots: Array = []  # where earlier crews camped
+var keepout: Array = []  # [Vector3, radius]: no trees here
+var blockers: Array = []  # extra bodies that block sight
 
 
 func generate(seed_: int, era_id: String) -> void:
@@ -48,22 +54,28 @@ func generate(seed_: int, era_id: String) -> void:
 	if era == "cretaceous":
 		_heights(seed_)
 		_pick_points()
+		_plan_structures()
 		_terrain()
 		_water()
+		_build_structures()
 		_flora_cretaceous()
 		_logs()
 		return
 	if era == "permian":
 		_heights_permian(seed_)
 		_pick_points()
+		_plan_structures()
 		_terrain()
+		_build_structures()
 		_rocks()
 		_flora_permian()
 		return
 	_heights(seed_)
 	_pick_points()
+	_plan_structures()
 	_terrain()
 	_water()
+	_build_structures()
 	_flora()
 	_logs()
 
@@ -221,6 +233,10 @@ func _water() -> void:
 
 
 func _clear(x: float, z: float, r: float) -> bool:
+	for k in keepout:
+		var c: Vector3 = k[0]
+		if Vector2(x - c.x, z - c.z).length() < float(k[1]) + r * 0.5:
+			return true
 	return Vector2(x - spawn.x, z - spawn.z).length() < r or Vector2(x - exit_pos.x, z - exit_pos.z).length() < r + 5.0
 
 
@@ -514,7 +530,7 @@ func clear_line(a: Vector3, b: Vector3) -> bool:
 	var q := PhysicsRayQueryParameters3D.create(a, b)
 	q.collide_with_areas = false
 	var hit := get_world_3d().direct_space_state.intersect_ray(q)
-	return hit.is_empty() or not (hit.collider == _colliders)
+	return hit.is_empty() or not (hit.collider == _colliders or blockers.has(hit.collider))
 
 
 ## Just the ground, for ragdolls to land on. Its own layer, so the player
@@ -1012,3 +1028,121 @@ func _flora_cretaceous() -> void:
 		mi.visibility_range_end = float(vis[parts[0]]) * (0.75 if lite else 1.0)
 		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		add_child(mi)
+
+
+# ---------------------------------------------------------------- earlier crews
+
+## Pick where the lost outpost and the old camps go, and level the ground
+## under them. Runs before the terrain mesh is built.
+func _plan_structures() -> void:
+	var best := Vector3.ZERO
+	for tries in 300:
+		var a := rng.randf() * TAU
+		var p := exit_pos + Vector3(cos(a), 0, sin(a)) * rng.randf_range(55.0, 85.0)
+		if absf(p.x) > BOUND - 26.0 or absf(p.z) > BOUND - 26.0:
+			continue
+		best = p
+		if height_at(p.x, p.z) > 0.3:
+			break
+	outpost_at = best
+	outpost_at.y = maxf(height_at(best.x, best.z), 0.35)
+	_level(outpost_at, 21.0, 26.0, outpost_at.y)
+	keepout.append([outpost_at, 22.0])
+	for k in 4:
+		for tries in 100:
+			var a := rng.randf() * TAU
+			var p := exit_pos + Vector3(cos(a), 0, sin(a)) * rng.randf_range(28.0, 115.0)
+			if absf(p.x) > BOUND - 12.0 or absf(p.z) > BOUND - 12.0 or height_at(p.x, p.z) < 0.2:
+				continue
+			if p.distance_to(outpost_at) < 30.0 or camp_spots.any(func(c: Vector3) -> bool: return c.distance_to(p) < 25.0):
+				continue
+			p.y = height_at(p.x, p.z)
+			_level(p, 4.0, 7.0, p.y)
+			camp_spots.append(p)
+			keepout.append([p, 5.0])
+			break
+
+
+func _level(c: Vector3, inner: float, outer: float, to: float) -> void:
+	for j in N + 1:
+		for i in N + 1:
+			var x := -HALF + i * STEP
+			var z := -HALF + j * STEP
+			var d := maxf(absf(x - c.x), absf(z - c.z)) if inner > 10.0 else Vector2(x - c.x, z - c.z).length()
+			if d < outer:
+				var k := smoothstep(outer, inner, d)
+				heights[j * (N + 1) + i] = lerpf(heights[j * (N + 1) + i], to, k)
+
+
+func _build_structures() -> void:
+	outpost = Outpost.new()
+	add_child(outpost)
+	var yaw := atan2(exit_pos.x - outpost_at.x, exit_pos.z - outpost_at.z)
+	for p in outpost.build(rng, outpost_at, yaw, outpost_at.y, look):
+		_add_trunk(p.x, p.z, 0.5, false)
+	blockers.append(outpost.body)
+	var sign := Label3D.new()
+	sign.text = "CHRONO BUREAU  -  FIELD OUTPOST %d" % (rng.randi() % 90 + 10)
+	sign.font_size = 40
+	sign.pixel_size = 0.006
+	sign.modulate = Color(0.95, 0.85, 0.5)
+	sign.outline_size = 8
+	sign.position = outpost.to_global_pre(Vector3(0, 3.4, outpost.n * Outpost.C * 0.5 + 0.1))
+	sign.rotation.y = yaw
+	add_child(sign)
+	for c in camp_spots:
+		_camp(c)
+
+
+## What's left of a crew: a collapsed tent, crates, a dead lantern, and
+## one of them, face down in the dirt.
+func _camp(c: Vector3) -> void:
+	var node := Node3D.new()
+	node.position = c
+	node.rotation.y = rng.randf() * TAU
+	add_child(node)
+	var st := Meshes.begin()
+	var canvas := Color(0.62, 0.55, 0.4).darkened(rng.randf() * 0.3)
+	# the tent, half fallen in
+	var a := Vector3(-1.2, 0, -0.9)
+	var b := Vector3(1.2, 0, -0.9)
+	var top0 := Vector3(-1.2, 1.1, 0.1)
+	var top1 := Vector3(1.0, 0.5, 0.3)
+	Meshes.quad(st, a, b, top1, top0, canvas, canvas.lightened(0.1))
+	Meshes.quad(st, Vector3(-1.2, 0, 1.1), top0, top1, Vector3(1.2, 0, 1.1), canvas.darkened(0.15), canvas)
+	Meshes.tube(st, [Vector3(-1.2, 0, 0.1), top0], [0.03, 0.03], [Color(0.3, 0.25, 0.2), Color(0.3, 0.25, 0.2)], 4)
+	var wood := Color(0.5, 0.36, 0.24)
+	for k in rng.randi_range(2, 3):
+		var p := Vector3(rng.randf_range(1.6, 2.6), 0, rng.randf_range(-1.2, 1.2))
+		var sz := rng.randf_range(0.5, 0.8)
+		Meshes.box(st, p - Vector3(sz, 0, sz) * 0.5, p + Vector3(sz * 0.5, sz, sz * 0.5), wood.darkened(rng.randf() * 0.3))
+		Meshes.box(st, p + Vector3(-sz * 0.2, sz * 0.4, -sz * 0.51), p + Vector3(sz * 0.2, sz * 0.6, -sz * 0.49), Color(0.9, 0.7, 0.2))
+	# the lantern, on its side
+	Meshes.tube(st, [Vector3(-1.8, 0.1, 1.4), Vector3(-1.55, 0.1, 1.5)], [0.1, 0.1], [Color(0.3, 0.3, 0.32), Color(0.5, 0.55, 0.5)], 6)
+	var mi := MeshInstance3D.new()
+	mi.mesh = Meshes.finish(st, Meshes.veg())
+	node.add_child(mi)
+	# the crew member who didn't make it: a faded chibi, lying down
+	var suit := Color(0.55, 0.5, 0.45)
+	var parts := Meshes.chibi(suit)
+	var corpse := Node3D.new()
+	corpse.position = Vector3(-0.2, 0.25, 2.0)
+	corpse.rotation = Vector3(-PI * 0.5, rng.randf() * TAU, 0)
+	node.add_child(corpse)
+	for m in [parts.body]:
+		var b2 := MeshInstance3D.new()
+		b2.mesh = m
+		corpse.add_child(b2)
+	var head := MeshInstance3D.new()
+	head.mesh = parts.head
+	head.position = Vector3(0, 0.55, 0)
+	head.rotation.z = 0.5
+	corpse.add_child(head)
+	var cs := CollisionShape3D.new()
+	var bx := BoxShape3D.new()
+	bx.size = Vector3(2.6, 1.2, 2.2)
+	cs.shape = bx
+	cs.position = c + Vector3(0, 0.6, 0)
+	cs.rotation.y = node.rotation.y
+	_colliders.add_child(cs)
+	_add_trunk(c.x, c.z, 1.5, false)

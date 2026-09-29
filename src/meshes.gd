@@ -911,6 +911,22 @@ static func loot(id: String) -> ArrayMesh:
 				var a := TAU * k / 6.0
 				ball(st, Vector3(cos(a) * 0.06, 0.27, sin(a) * 0.06), 0.05, Color(1.0, 0.78, 0.88), 0.4, 6, 3)
 			ball(st, Vector3(0, 0.28, 0), 0.03, Color(1.0, 0.9, 0.4), 1.0, 6, 3)
+		"chrono_core":
+			var brass := Color(0.85, 0.66, 0.3)
+			tube(st, [Vector3(0, 0.0, 0), Vector3(0, 0.06, 0)], [0.2, 0.2], [brass.darkened(0.3), brass], 12)
+			tube(st, [Vector3(0, 0.42, 0), Vector3(0, 0.48, 0)], [0.2, 0.2], [brass, brass.lightened(0.1)], 12)
+			for k in 4:
+				var a := TAU * k / 4.0
+				tube(st, [Vector3(cos(a) * 0.17, 0.05, sin(a) * 0.17), Vector3(cos(a) * 0.17, 0.43, sin(a) * 0.17)], [0.02, 0.02], [brass, brass], 5)
+			ball(st, Vector3(0, 0.25, 0), 0.13, Color(0.4, 0.95, 1.0), 1.3, 12, 6, Color(0.8, 0.5, 1.0))
+		"lost_tape":
+			box(st, Vector3(-0.16, 0.0, -0.1), Vector3(0.16, 0.05, 0.1), Color(0.08, 0.08, 0.09))
+			box(st, Vector3(-0.12, 0.051, -0.06), Vector3(0.12, 0.055, 0.03), Color(0.95, 0.92, 0.8))
+			for sd in [-1.0, 1.0]:
+				tube(st, [Vector3(0.06 * sd, 0.05, 0.05), Vector3(0.06 * sd, 0.056, 0.05)], [0.03, 0.03], [Color(0.3, 0.25, 0.2), Color(0.3, 0.25, 0.2)], 8)
+		"badge":
+			tube(st, [Vector3(0, 0.0, 0), Vector3(0, 0.03, 0)], [0.1, 0.1], [Color(0.75, 0.6, 0.25), Color(0.95, 0.8, 0.35)], 12)
+			ball(st, Vector3(0, 0.035, 0), 0.05, Color(0.3, 0.8, 0.95), 0.2, 8, 3)
 		"tooth":
 			var c := Color(0.95, 0.92, 0.82)
 			tube(st, [Vector3(0, 0.02, 0), Vector3(0.02, 0.14, 0), Vector3(0.07, 0.3, 0)], [0.05, 0.035, 0.004], [c.darkened(0.2), c, c], 8)

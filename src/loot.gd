@@ -18,6 +18,9 @@ var weight := 0.5
 var nest := false  # taking it enrages the hunter
 var fragile := false  # eggs crack if they hit the ground
 var cracked := false
+var two_handed := false  # takes both hands: no switching until you put it down
+var taken := false  # a nest egg only enrages its parent once
+var fall_speed := 0.0
 var state := GROUND
 var holder := 0
 var thrower := 0
@@ -44,6 +47,7 @@ func setup(i: int, info: Dictionary, at: Vector3, w: World) -> void:
 	weight = float(info.weight)
 	nest = info.where == "nest"
 	fragile = item_id.ends_with("egg") or item_id.ends_with("spawn")
+	two_handed = weight >= 2.0
 	position = at
 	t = randf() * 10.0
 	mesh = Meshes.loot(item_id)
@@ -78,8 +82,9 @@ func setup(i: int, info: Dictionary, at: Vector3, w: World) -> void:
 	glint.position.y = 0.4
 	add_child(glint)
 	tag = Label3D.new()
-	tag.font_size = 32
-	tag.pixel_size = 0.004
+	tag.font_size = 24
+	tag.pixel_size = 0.0022
+	tag.fixed_size = true
 	tag.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	tag.outline_size = 8
 	tag.no_depth_test = true
@@ -115,6 +120,7 @@ func throw_from(at: Vector3, v: Vector3, who: int) -> void:
 	vel = v
 	air = 0.0
 	landed = false
+	fall_speed = 0.0
 	visible = true
 
 
@@ -138,6 +144,7 @@ func _physics_process(dt: float) -> void:
 	var g := world.height_at(position.x, position.z)
 	if position.y <= g:
 		position.y = g
+		fall_speed = vel.length()
 		vel = Vector3.ZERO
 		mi.rotation.x = 0.0
 		landed = true

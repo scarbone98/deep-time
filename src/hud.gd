@@ -32,6 +32,10 @@ var flash := 0.0
 var clean := 0.0
 var prompt_label: Label
 var rift_label: Label
+var hotbar: Control
+var slot_names: Array = []
+var slot_held := 0
+var slot_two := false
 var stage_box: HBoxContainer
 var menu_box: VBoxContainer
 var menu_fields := {}
@@ -88,6 +92,11 @@ func _ready() -> void:
 	spec_label.offset_right = 250
 	spec_label.offset_top = 40
 	shot_label = _label(osd, "", 11, Vector2(20, 40))
+	hotbar = Control.new()
+	hotbar.set_anchors_preset(Control.PRESET_FULL_RECT)
+	hotbar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	hotbar.draw.connect(_draw_hotbar)
+	osd.add_child(hotbar)
 	rift_label = _label(osd, "", 18, Vector2.ZERO)
 	rift_label.set_anchors_preset(Control.PRESET_CENTER_TOP)
 	rift_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -277,6 +286,44 @@ func spec(who: String, touch: bool) -> void:
 func add_panel(c: Control) -> void:
 	add_child(c)
 	move_child(c, get_child_count() - 2)
+
+
+func set_slots(names: Array, held: int, two: bool) -> void:
+	slot_names = names
+	slot_held = held
+	slot_two = two
+	hotbar.queue_redraw()
+
+
+## Lethal Company-ish slots along the bottom: the one in your hands is lit.
+func _draw_hotbar() -> void:
+	if slot_names.is_empty():
+		return
+	var vs := hotbar.get_rect().size
+	var w := 46.0
+	var gap := 6.0
+	var total := slot_names.size() * w + (slot_names.size() - 1) * gap
+	var x0 := (vs.x - total) * 0.5
+	var y := vs.y - 64.0 if vs.x > vs.y else vs.y - 250.0
+	var font := ThemeDB.fallback_font
+	for k in slot_names.size():
+		var r := Rect2(x0 + k * (w + gap), y, w, w)
+		var sel: bool = k == slot_held
+		hotbar.draw_rect(r, Color(0, 0, 0, 0.45))
+		hotbar.draw_rect(r, Color(1.0, 0.85, 0.4, 0.95) if sel else Color(1, 1, 1, 0.3), false, 2.0 if sel else 1.0)
+		var n: String = slot_names[k]
+		if n != "":
+			var words := n.split(" ")
+			var short: String = words[words.size() - 1] if words.size() > 0 else n
+			if short.length() > 7:
+				short = short.substr(0, 7)
+			var tw := font.get_string_size(short, HORIZONTAL_ALIGNMENT_LEFT, -1, 9).x
+			hotbar.draw_string(font, r.position + Vector2((w - tw) * 0.5, w * 0.58), short, HORIZONTAL_ALIGNMENT_LEFT, -1, 9, Color(1, 0.95, 0.8))
+		hotbar.draw_string(font, r.position + Vector2(3, 11), str(k + 1), HORIZONTAL_ALIGNMENT_LEFT, -1, 9, Color(1, 1, 1, 0.5))
+	if slot_two:
+		var t := "BOTH HANDS"
+		var tw2 := font.get_string_size(t, HORIZONTAL_ALIGNMENT_LEFT, -1, 10).x
+		hotbar.draw_string(font, Vector2((vs.x - tw2) * 0.5, y - 6), t, HORIZONTAL_ALIGNMENT_LEFT, -1, 10, Color(1.0, 0.7, 0.4))
 
 
 ## The rift's countdown: calm, then amber, then a red pulse.

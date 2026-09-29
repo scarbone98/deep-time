@@ -8,7 +8,18 @@ extends Node3D
 signal caught(victim: Player)
 signal alerted
 
-const SCALE := 1.25
+## Tunables that the dinosaurs (Raptor, TRex) change.
+var size := 1.25
+var catch_range := 2.7
+var head_off := Vector3(0, 0.85, -2.0)
+var eye_off := Vector3(0, 1.1, -2.4)
+var sight := 40.0
+var lit_sight := 75.0
+var stalk_speed := 2.3
+var prowl_speed := 1.6
+var thud_pitch := 0.58
+var gait_rate := 2.4
+var jaw: Node3D
 
 var world: World
 var session: Node
@@ -47,10 +58,32 @@ func setup(w: World, sess: Node, s: Dictionary, at: Vector3, facing: Vector3) ->
 	rng.randomize()
 	dir = Vector3(facing.x, 0, facing.z).normalized()
 	position = Vector3(at.x, world.height_at(at.x, at.z), at.z)
-	scale = Vector3.ONE * SCALE
+	_tune()
+	scale = Vector3.ONE * size
 	rig = Node3D.new()
 	rig.position.y = 0.42
 	add_child(rig)
+	_build_body()
+	growl = _audio(s.growl, 6.0, 60.0)
+	roar = _audio(s.roar, 14.0, 140.0)
+	thud = _audio(s.step, 8.0, 50.0)
+	_voice()
+	target = position + dir * 10.0
+	net_pos = position
+	_pose()
+
+
+## Subclasses set their numbers here.
+func _tune() -> void:
+	pass
+
+
+## Subclasses pitch their voices here.
+func _voice() -> void:
+	pass
+
+
+func _build_body() -> void:
 	var m := Meshes.gorgon()
 	var body := MeshInstance3D.new()
 	body.mesh = m.body
@@ -64,12 +97,6 @@ func setup(w: World, sess: Node, s: Dictionary, at: Vector3, facing: Vector3) ->
 		lm.scale = Vector3(signf(hip[0]), 1, 1)
 		pv.add_child(lm)
 		legs.append(pv)
-	growl = _audio(s.growl, 6.0, 60.0)
-	roar = _audio(s.roar, 14.0, 140.0)
-	thud = _audio(s.step, 8.0, 50.0)
-	target = position + dir * 10.0
-	net_pos = position
-	_pose()
 
 
 func _audio(stream: AudioStream, unit: float, far: float) -> AudioStreamPlayer3D:
@@ -87,7 +114,7 @@ func begin() -> void:
 
 
 func head_pos() -> Vector3:
-	return to_global(Vector3(0, 0.85, -2.0))
+	return to_global(head_off)
 
 
 func is_hunting() -> bool:
@@ -142,11 +169,15 @@ func _puppet(dt: float) -> void:
 		position = net_pos
 	position = position.lerp(net_pos, 1.0 - exp(-dt * 10.0))
 	var prev := gait
-	gait += speed * dt * 2.4
-	if state == "charge" and int(prev / PI) != int(gait / PI):
-		thud.pitch_scale = rng.randf_range(0.5, 0.65)
-		thud.play()
+	gait += speed * dt * gait_rate
+	_footfall(prev)
 	_pose()
+
+
+func _footfall(prev: float) -> void:
+	if (state == "charge" or thud_pitch < 0.4) and speed > 0.5 and int(prev / PI) != int(gait / PI):
+		thud.pitch_scale = thud_pitch * rng.randf_range(0.9, 1.1)
+		thud.play()
 
 
 func _physics_process(dt: float) -> void:
@@ -204,10 +235,8 @@ func _physics_process(dt: float) -> void:
 		dir = dir.rotated(Vector3.UP, 1.5 * dt * 3.0)
 	position.y = lerpf(position.y, world.height_at(position.x, position.z), 1.0 - exp(-dt * 12.0))
 	var prev := gait
-	gait += speed * dt * 2.4
-	if state == "charge" and int(prev / PI) != int(gait / PI):
-		thud.pitch_scale = rng.randf_range(0.5, 0.65)
-		thud.play()
+	gait += speed * dt * gait_rate
+	_footfall(prev)
 	_pose()
 
 
@@ -218,16 +247,18 @@ func _look(dt: float) -> void:
 	if player == null:
 		return
 	var fwd := dir
-	var eye := position + Vector3(0, 1.1, 0) + fwd * 2.4
+	var eye := to_global(eye_off)
 	var best := 1e9
 	var reach := 40.0
 	var d := 0.0
 	var pp := Vector3.ZERO
 	for p: Player in session.alive_players():
+		if not _notices(p):
+			continue
 		var at: Vector3 = p.global_position + Vector3(0, 0.6 if p.crouching else 1.3, 0)
 		var to := at - eye
 		var dd := to.length()
-		var r := 75.0 if p.light.visible else 40.0
+		var r := lit_sight if p.light.visible else sight
 		if p.crouching:
 			r *= 0.6
 		if dd < r and dd < best and (fwd.dot(to / dd) > cos(deg_to_rad(65.0)) or dd < 7.0) and world.clear_line(eye, at):
@@ -249,10 +280,15 @@ func _look(dt: float) -> void:
 		lost += dt
 
 
+## Whether it can pick this player out at all (the T. rex only sees movement).
+func _notices(_p: Player) -> bool:
+	return true
+
+
 func _think(dt: float) -> void:
 	var pp := player.global_position
 	var d := Vector2(pp.x - position.x, pp.z - position.z).length()
-	if player.alive and d < 2.4 * SCALE * 0.9 and not hear_off:
+	if player.alive and d < catch_range and not hear_off:
 		caught.emit(player)
 		feeding = 3.5
 		_pick_prowl()
@@ -260,7 +296,7 @@ func _think(dt: float) -> void:
 	var arrive := Vector2(target.x - position.x, target.z - position.z).length() < 2.0
 	match state:
 		"prowl":
-			want_speed = 1.6
+			want_speed = prowl_speed
 			timer -= dt
 			if arrive or timer <= 0.0:
 				_pick_prowl()
@@ -268,7 +304,7 @@ func _think(dt: float) -> void:
 				state = "stalk"
 				growl.play()
 		"stalk":
-			want_speed = 2.3
+			want_speed = stalk_speed
 			target = last_seen
 			if seen >= 1.0:
 				state = "charge"

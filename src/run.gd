@@ -18,6 +18,9 @@ static var player_name := ""
 static var sens := 1.0  # mouse / thumb look sensitivity
 static var gear := {"pack": 0, "battery": 0}  # permanent upgrades
 static var decoys := 0
+## The Chrono Bureau's quota: bank the target within three drops, or
+## you're fired and your credits are wiped (cosmetics stay).
+static var quota := new_quota()
 static var last_haul := -1
 static var _loaded := false
 
@@ -41,6 +44,9 @@ static func load_save() -> void:
 		for k in gear:
 			gear[k] = int(g.get(k, 0))
 		decoys = int(c.get_value("run", "decoys", 0))
+		var q: Dictionary = c.get_value("run", "quota", {})
+		if q.has("target"):
+			quota = q
 
 
 static func save() -> void:
@@ -53,6 +59,7 @@ static func save() -> void:
 	c.set_value("run", "sens", sens)
 	c.set_value("run", "gear", gear)
 	c.set_value("run", "decoys", decoys)
+	c.set_value("run", "quota", quota)
 	c.save(PATH)
 
 
@@ -120,3 +127,29 @@ static func cash(n: int) -> String:
 static func clock(secs: float) -> String:
 	var s := int(secs)
 	return "%d:%02d" % [s / 60, s % 60]
+
+
+static func new_quota() -> Dictionary:
+	return {"target": 300, "banked": 0, "left": 3, "round": 1}
+
+
+## Count a drop's haul against a quota. Returns "met", "fired" or "".
+static func quota_step(q: Dictionary, haul: int) -> String:
+	q.banked = int(q.banked) + haul
+	q.left = int(q.left) - 1
+	if int(q.banked) >= int(q.target):
+		q.round = int(q.round) + 1
+		q.target = int(int(q.target) * 1.6 + 100)
+		q.banked = 0
+		q.left = 3
+		return "met"
+	if int(q.left) <= 0:
+		var fresh := new_quota()
+		for k in fresh:
+			q[k] = fresh[k]
+		return "fired"
+	return ""
+
+
+static func quota_line(q: Dictionary) -> String:
+	return "QUOTA  %s / %s   %d drop%s left" % [cash(int(q.banked)), cash(int(q.target)), int(q.left), "" if int(q.left) == 1 else "s"]

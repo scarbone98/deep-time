@@ -17,7 +17,7 @@ signal snapshot(data: PackedFloat32Array)
 signal event(ev: Array)
 signal left
 
-const VERSION := 4
+const VERSION := 5
 const MAX_PLAYERS := 4
 const DEFAULT_URL := "wss://deep-time-coop.fly.dev"
 const CODE_ALPHABET := "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
@@ -38,6 +38,7 @@ var host_id := 0
 var members := {}  # peer id -> {"name": String, "color": int}
 var phase := "hub"
 var in_level := false  # a level (the hub counts) is loaded for us
+var quota := {}  # the room's quota
 var level := 1
 var seed_ := 0
 var player_name := ""
@@ -157,7 +158,8 @@ func s_error(msg: String) -> void:
 
 
 @rpc("authority", "call_remote", "reliable")
-func s_room(room_code: String, host: int, mem: Dictionary, ph: String, lvl: int) -> void:
+func s_room(room_code: String, host: int, mem: Dictionary, ph: String, lvl: int, q: Dictionary) -> void:
+	quota = q
 	var fresh := not online
 	online = true
 	code = room_code
@@ -236,7 +238,7 @@ func _roster(room: Dictionary) -> Dictionary:
 
 func _push_room(room: Dictionary) -> void:
 	for id in room.members:
-		s_room.rpc_id(id, room.code, room.host, _roster(room), room.phase, room.level)
+		s_room.rpc_id(id, room.code, room.host, _roster(room), room.phase, room.level, room.quota)
 
 
 @rpc("any_peer", "call_remote", "reliable")
@@ -252,7 +254,7 @@ func c_hello(version: int, pname: String, room_code: String, create: bool, look:
 	if create:
 		var c := room_code if room_code.length() == 4 and not rooms.has(room_code) else _new_code()
 		room = {"code": c, "host": id, "members": {}, "level": 0, "seed": 0, "phase": "loading",
-			"session": null, "vp": null, "loaded": {}, "t": 0.0, "next": 0}
+			"session": null, "vp": null, "loaded": {}, "t": 0.0, "next": 0, "quota": Run.new_quota()}
 		rooms[c] = room
 	else:
 		if not rooms.has(room_code):
@@ -404,7 +406,10 @@ func room_event_to(id: int, ev: Array) -> void:
 	s_event.rpc_id(id, ev)
 
 
-func room_over(room: Dictionary, _haul: int) -> void:
+func room_over(room: Dictionary, haul: int) -> void:
+	var result := Run.quota_step(room.quota, haul)
+	var q: Dictionary = room.quota
+	room_event(room, ["quota", q.target, q.banked, q.left, q.round, result])
 	room.phase = "card"
 	room.t = 0.0
 	room.next = 0  # home to the hub

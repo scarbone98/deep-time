@@ -52,9 +52,13 @@ var last_move := Vector2.ZERO
 var last_sprint := false
 var last_input_t := 0.0
 var bot := false  # dev: walk in circles
-var bag: Array[int] = []  # loot indices carried
-var carry := 0.0  # their total weight: slower, louder
-var bag_max := 3
+var slots: Array[int] = [-1, -1, -1, -1]  # loot index per slot, -1 empty
+var held := 0  # the slot in your hands
+var carry := 0.0  # total weight: slower, louder
+var hand: Node3D  # first person: what you're holding
+var hand_mi: MeshInstance3D
+var hand_two := false
+var hand_swap := 0.0
 var battery_life := 300.0
 var vy := 0.0
 var grounded := true
@@ -63,6 +67,7 @@ var jump_queued := false
 var last_jump := false
 var land_dip := 0.0
 var fov_kick := 0.0
+var shake := 0.0  # big footsteps nearby
 
 
 func setup(w: World, s: Dictionary, is_view := true) -> void:
@@ -95,9 +100,50 @@ func setup(w: World, s: Dictionary, is_view := true) -> void:
 	light.position = Vector3(0.1, -0.08, 0.0)
 	light.visible = false
 	cam.add_child(light)
+	hand = Node3D.new()
+	cam.add_child(hand)
+	hand_mi = MeshInstance3D.new()
+	hand.add_child(hand_mi)
 	step_sfx = _audio(null, -6.0)
 	breath = _audio(sounds.breath, -80.0)
 	heart = _audio(sounds.heart, -80.0)
+
+
+# ------------------------------------------------ inventory
+
+func items() -> Array[int]:
+	var out: Array[int] = []
+	for i in slots:
+		if i >= 0:
+			out.append(i)
+	return out
+
+
+func held_item() -> int:
+	return slots[held]
+
+
+func free_slot() -> int:
+	if slots[held] < 0:
+		return held
+	for k in slots.size():
+		if slots[k] < 0:
+			return k
+	return -1
+
+
+func set_slot_count(n: int) -> void:
+	while slots.size() < n:
+		slots.append(-1)
+
+
+## What you see in your hands. Big things are held low in both arms.
+func set_hand(m: Mesh, two: bool) -> void:
+	hand_mi.mesh = m
+	hand_two = two
+	hand_swap = 0.25
+	hand_mi.scale = Vector3.ONE * (1.2 if two else 1.0)
+	hand_mi.rotation = Vector3(0.2, -0.4, 0.0) if not two else Vector3(0.1, 0.0, 0.0)
 
 
 func _audio(stream: AudioStream, db: float) -> AudioStreamPlayer:
@@ -307,6 +353,17 @@ func _tick(dt: float) -> void:
 	cam.rotation.z = sin(bob) * 0.004 + sin(t * 0.7) * 0.002
 	cam.rotation.x = sin(t * 0.53) * 0.002 * (1.0 + winded * 3.0)
 	cam.rotation.y = 0.0
+	if shake > 0.01:
+		cam.rotation.x += randf_range(-1.0, 1.0) * shake * 0.03
+		cam.rotation.z += randf_range(-1.0, 1.0) * shake * 0.03
+		cam.v_offset = randf_range(-1.0, 1.0) * shake * 0.05
+	else:
+		cam.v_offset = 0.0
+	shake = lerpf(shake, 0.0, 1.0 - exp(-dt * 6.0))
+	# the held item: bobs with your step, dips when you swap or land
+	hand_swap = maxf(0.0, hand_swap - dt)
+	var base := Vector3(0.0, -0.52, -0.62) if hand_two else Vector3(0.3, -0.32, -0.52)
+	hand.position = base + Vector3(sin(bob) * 0.012, absf(sin(bob)) * 0.014 - hand_swap * 1.2 - land_dip * 0.5, 0.0)
 
 
 func _step(depth: float, running: bool) -> void:

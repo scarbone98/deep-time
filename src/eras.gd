@@ -2,7 +2,7 @@ class_name Eras
 extends RefCounted
 ## One entry per level: the look, the sound, the shot list, the words.
 
-const COUNT := 2  # eras you can drop into; the hub is level 0
+const COUNT := 3  # eras you can drop into; the hub is level 0
 
 
 static func get_era(n: int) -> Dictionary:
@@ -10,6 +10,8 @@ static func get_era(n: int) -> Dictionary:
 		return hub()
 	if n == 2:
 		return permian()
+	if n == 3:
+		return cretaceous()
 	return carboniferous()
 
 
@@ -87,4 +89,33 @@ static func permian() -> Dictionary:
 		],
 		"exit": {"wall": Color(0.82, 0.86, 0.85), "wall2": Color(0.74, 0.8, 0.8), "floor": Color(0.62, 0.72, 0.74),
 			"light": Color(0.8, 0.95, 1.0), "door": Color(0.75, 0.95, 1.0)},
+	}
+
+
+static func cretaceous() -> Dictionary:
+	return {
+		"id": "cretaceous",
+		"title": "HELL CREEK",
+		"date": "CRETACEOUS  -66,000,000",
+		"blurb": "Dinosaurs. Raptors hunt in pairs, by sight and sound.\nThe big one only sees you move.",
+		"intro": "The last summer of the dinosaurs.\nGrab what you can. Get back through the rift.\n\nThe raptors hear you and see you.\nThe big one only sees what moves.",
+		"tip": "if the ground shakes: stand still.",
+		"fog": Color(0.2, 0.24, 0.2),
+		"fog_density": 0.035,
+		"ambient": Color(0.42, 0.5, 0.4),
+		"ambient_energy": 0.8,
+		"sun": Color(1.0, 0.85, 0.6),
+		"sun_energy": 0.8,
+		"sun_rot": Vector3(-30, 140, 0),
+		"loops": [["res://audio/junglenight.ogg", -7.0], ["res://audio/darkrain.ogg", -18.0]],
+		"loot": [
+			{"id": "trike_egg", "name": "TRICERATOPS EGG", "value": 190, "weight": 2.5, "where": "nest", "count": 4},
+			{"id": "rex_tooth", "name": "T. REX TOOTH", "value": 120, "weight": 0.5, "where": "bones", "count": 3},
+			{"id": "feather", "name": "RAPTOR FEATHER", "value": 45, "weight": 0.5, "where": "scatter", "count": 5},
+			{"id": "amber", "name": "AMBER", "value": 45, "weight": 0.5, "where": "scatter", "count": 5},
+			{"id": "ammonite", "name": "AMMONITE", "value": 35, "weight": 1.0, "where": "near_pool", "count": 4},
+			{"id": "flower", "name": "FIRST FLOWER", "value": 20, "weight": 0.5, "where": "scatter", "count": 6},
+		],
+		"exit": {"wall": Color(0.55, 0.7, 0.62), "wall2": Color(0.5, 0.64, 0.57), "floor": Color(0.35, 0.36, 0.4),
+			"light": Color(0.85, 1.0, 0.9), "door": Color(0.8, 1.0, 0.85)},
 	}

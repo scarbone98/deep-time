@@ -97,6 +97,8 @@ var strain_sent := 0
 var rumble: AudioStreamPlayer
 var banked_flash := 0.0
 var jumped_since_send := false
+var home_value := 0  # carried home through the door this drop
+var quota_msg := ""
 
 
 # ================================================================ setup
@@ -150,7 +152,7 @@ func _ready() -> void:
 	local = _make_player(my_id, true, slot)
 	local.bot = flags.has("bot")
 	_gear_up(local, Run.net_look())
-	bags[my_id] = local.bag
+	bags[my_id] = local.slots
 	if exit_node:
 		exit_node.player = local
 	spec_cam = Camera3D.new()
@@ -169,6 +171,8 @@ func _ready() -> void:
 		pad.mic.connect(_toggle_mic)
 		pad.use.connect(_use)
 		pad.drop.connect(_drop)
+		pad.throw.connect(func() -> void: _drop(true))
+		pad.swap.connect(func() -> void: _hold((local.held + 1) % local.slots.size()))
 		pad.decoy.connect(_throw_decoy)
 		hud.add_touch(pad)
 		local.touch = pad
@@ -244,6 +248,8 @@ func _build(view: bool) -> void:
 	mill = _spawn_hunter(mstart, facing)
 	if era.id == "permian":
 		_populate_permian(rng)
+	elif era.id == "cretaceous":
+		_populate_cretaceous(rng, mstart)
 	else:
 		_populate_carboniferous(rng)
 	netted = []
@@ -394,8 +400,44 @@ func _populate_permian(rng: RandomNumberGenerator) -> void:
 			dicys.append(d)
 
 
-func _spawn_hunter(at: Vector3, facing: Vector3) -> Node3D:
-	var m: Node3D = Gorgon.new() if era.id == "permian" else Millipede.new()
+func _populate_cretaceous(rng: RandomNumberGenerator, lair: Vector3) -> void:
+	# the pack's second raptor, a little way from the first
+	var p2 := lair + Vector3(rng.randf_range(-8, 8), 0, rng.randf_range(-8, 8))
+	p2.y = world.height_at(p2.x, p2.z)
+	_spawn_hunter(p2, Vector3.FORWARD, "raptor")
+	# the rex, further out
+	var rx := _creature_start(rng, 85.0, 120.0)
+	_spawn_hunter(rx, (world.spawn - rx).normalized(), "rex")
+	var tm := Meshes.triceratops()
+	for h in 2:
+		var c := _creature_start(rng, 40.0, 90.0)
+		var herd := {"center": c}
+		if _authority():
+			var goal := _ring(c, 20.0, 40.0)
+			var tw := create_tween().set_loops()
+			tw.tween_method(func(v: Vector3) -> void: herd.center = v, c, goal, 80.0)
+			tw.tween_method(func(v: Vector3) -> void: herd.center = v, goal, c, 80.0)
+		for k in rng.randi_range(3, 4):
+			var g := Grazer.new()
+			g.process_mode = Node.PROCESS_MODE_PAUSABLE
+			add_child(g)
+			g.setup(world, herd, sounds, tm)
+			grazers.append(g)
+
+
+func _spawn_hunter(at: Vector3, facing: Vector3, kind := "") -> Node3D:
+	if kind == "":
+		kind = {"permian": "gorgon", "cretaceous": "raptor"}.get(era.id, "millipede")
+	var m: Node3D
+	match kind:
+		"gorgon":
+			m = Gorgon.new()
+		"raptor":
+			m = Raptor.new()
+		"rex":
+			m = TRex.new()
+		_:
+			m = Millipede.new()
 	m.process_mode = Node.PROCESS_MODE_PAUSABLE
 	add_child(m)
 	m.setup(world, self, sounds, at, facing)
@@ -516,7 +558,8 @@ func _input_map() -> void:
 		"fwd": [KEY_W, KEY_UP], "back": [KEY_S, KEY_DOWN], "left": [KEY_A, KEY_LEFT], "right": [KEY_D, KEY_RIGHT],
 		"sprint": [KEY_SHIFT], "crouch": [KEY_C, KEY_CTRL], "light": [KEY_F], "use": [KEY_E], "drop": [KEY_G], "jump": [KEY_SPACE], "decoy": [KEY_Q],
 		"sens_down": [KEY_BRACKETLEFT], "sens_up": [KEY_BRACKETRIGHT],
-		"emote1": [KEY_1], "emote2": [KEY_2], "emote3": [KEY_3], "emote4": [KEY_4], "mute": [KEY_M],
+		"slot1": [KEY_1], "slot2": [KEY_2], "slot3": [KEY_3], "slot4": [KEY_4], "slot5": [KEY_5], "slot6": [KEY_6],
+		"throw": [KEY_T], "emote1": [KEY_Z], "emote2": [KEY_X], "emote3": [KEY_V], "emote4": [KEY_B], "mute": [KEY_M],
 	}
 	for a in m:
 		if InputMap.has_action(a):
@@ -588,6 +631,14 @@ func _apply_dev_flags() -> void:
 		local.pitch = -0.6 if target is Loot else -0.12
 	local.rotation.y = local.yaw
 	local.head.rotation.x = local.pitch
+	if flags.has("rex"):  # dev: the rex, D m ahead, side on
+		var fwd := Basis(Vector3.UP, local.yaw) * Vector3.FORWARD
+		var at := local.position + fwd * float(flags.rex)
+		at.y = world.height_at(at.x, at.z)
+		_spawn_hunter(at, fwd.rotated(Vector3.UP, 1.4), "rex")
+	if flags.has("pad"):  # dev: start on the rift's carpet, facing out
+		local.position = exit_node.to_global(Vector3(0.8, 0, 2.5))
+		local.yaw = world.exit_yaw + PI
 	if flags.has("rift"):  # dev: seconds left on the rift
 		elapsed = RIFT_TIME - float(flags.rift)
 		strain_sent = 1 if float(flags.rift) < RIFT_TIME * 0.5 else 0
@@ -776,13 +827,13 @@ func _start() -> void:
 		tips.append(["the TIME CONSOLE drops you in.  the SHOP sells hats.", 5.0])
 	else:
 		tips = [["", 1.0], ["the rift stays open for 7 minutes.", 3.5],
-			["grab loot, bring it back to the rift's carpet to bank it.  go out again.", 5.0],
+			["carry loot back and set it down on the rift's carpet.  it all comes home with you.", 5.5],
 			["eggs are worth the most.  their parents disagree.", 4.0], [era.tip, 4.0],
-			["E grab   G throw   SPACE jump   Q decoy" if not touch else "GRAB it.  THROW it to a friend.", 5.0]]
+			["E grab   G drop   T throw   1-4 / wheel switch hands   Q decoy" if not touch else "GRAB it.  DROP it on the rift's carpet.", 5.0]]
 	if mode == "client":
 		if not touch:
 			tips.push_front(["click to grab the camera", 3.0])
-			tips.append(["1 wave  2 point  3 scream  4 flash   M mute", 5.0])
+			tips.append(["Z wave  X point  V scream  B flash   M mute", 5.0])
 		if Net.voice.mic_ok() and not hub:
 			tips.append(["talking is noise too.", 3.0])
 	hud.say(tips)
@@ -812,19 +863,19 @@ func add_net_player(id: int, info: Dictionary) -> void:
 	_gear_up(p, info.get("look", {}))
 	if Net.dev.has("give"):  # dev: everyone starts holding two things
 		for l in loot:
-			if l.on_ground() and p.bag.size() < 2:
+			if l.on_ground() and p.items().size() < 2 and not l.two_handed:
 				l.position = p.position
 				var was := sim_on
 				sim_on = true
 				act(id, 1, l.idx)
 				sim_on = was
-	bags[id] = p.bag
+	bags[id] = p.slots
 	if sim_on:
 		p.begin()
 
 
 func _gear_up(p: Player, look: Dictionary) -> void:
-	p.bag_max = 3 + int(look.get("pack", 0))
+	p.set_slot_count(4 + int(look.get("pack", 0)))
 	p.battery_life = 300.0 * (2.0 if int(look.get("battery", 0)) > 0 else 1.0)
 
 
@@ -906,8 +957,6 @@ func _physics_process(dt: float) -> void:
 		for p: Player in alive_players():
 			if exit_node.inside(p):
 				_through(p)
-			elif not p.bag.is_empty() and exit_node.on_pad(p):
-				_bank(p)
 		_rift_clock()
 		_fly_loot()
 	if mode == "server":
@@ -927,36 +976,56 @@ func _emit(ev: Array) -> void:
 
 
 ## A player (or their client) asked to do something. kind 1: pick up loot
-## #arg. 2: throw the last thing carried. 3: throw a decoy. 4: go home.
+## #arg. 2: drop what's in hand. 3: throw a decoy. 4: go home.
+## 5: hold slot #arg. 6: throw what's in hand.
 func act(id: int, kind: int, arg: int) -> void:
 	var p: Player = players.get(id)
 	if p == null or not p.alive or p.through or hub or not sim_on:
 		return
-	if kind == 1:
-		if arg < 0 or arg >= loot.size() or p.bag.size() >= p.bag_max:
-			return
-		var l := loot[arg]
-		if not l.on_ground() or l.position.distance_to(p.position) > REACH + 0.6:
-			return
-		l.set_state(Loot.CARRIED, id)
-		p.bag.append(arg)
-		p.carry += l.weight
-		_emit(["pick", id, arg])
-		if l.nest:
-			_nest_taken(p, l.position)
-	elif kind == 2 and not p.bag.is_empty():
-		var i: int = p.bag.pop_back()
-		p.carry = maxf(0.0, p.carry - loot[i].weight)
-		var th := _throw_vec(p)
-		loot[i].throw_from(th[0], th[1], id)
-		_emit(["throw", id, i, th[0].x, th[0].y, th[0].z, th[1].x, th[1].y, th[1].z])
-	elif kind == 3:
-		var th := _throw_vec(p)
-		_spawn_decoy(th[0], th[1], true)
-		_emit(["decoy", id, th[0].x, th[0].y, th[0].z, th[1].x, th[1].y, th[1].z])
-	elif kind == 4 and exit_node and exit_node.near_door_of(p):
-		_through(p)
+	var h := p.held_item()
+	var two := h >= 0 and loot[h].two_handed
+	match kind:
+		1:
+			if arg < 0 or arg >= loot.size() or two:
+				return
+			var l := loot[arg]
+			var slot := p.free_slot()
+			if slot < 0 or not l.on_ground() or l.position.distance_to(p.position) > REACH + 0.6:
+				return
+			l.set_state(Loot.CARRIED, id)
+			p.slots[slot] = arg
+			p.held = slot
+			_reweigh(p)
+			_emit(["pick", id, arg, slot])
+			if l.nest and not l.taken:
+				l.taken = true
+				_nest_taken(p, l.position)
+		2, 6:
+			if h < 0:
+				return
+			p.slots[p.held] = -1
+			_reweigh(p)
+			var th := _throw_vec(p) if kind == 6 else _drop_vec(p)
+			loot[h].throw_from(th[0], th[1], id)
+			_emit(["throw", id, h, th[0].x, th[0].y, th[0].z, th[1].x, th[1].y, th[1].z])
+		3:
+			var th := _throw_vec(p)
+			_spawn_decoy(th[0], th[1], true)
+			_emit(["decoy", id, th[0].x, th[0].y, th[0].z, th[1].x, th[1].y, th[1].z])
+		4:
+			if exit_node and exit_node.near_door_of(p):
+				_through(p)
+		5:
+			if two or arg < 0 or arg >= p.slots.size():
+				return
+			p.held = arg
+			_emit(["hold", id, arg])
 
+
+func _reweigh(p: Player) -> void:
+	p.carry = 0.0
+	for i in p.items():
+		p.carry += loot[i].weight
 
 ## Where a throw starts and how fast it goes: out of the camera, along
 ## the look, a bit of loft, plus however fast they were moving.
@@ -964,10 +1033,14 @@ func _throw_vec(p: Player) -> Array:
 	var dir := Basis(Vector3.UP, p.yaw) * Basis(Vector3.RIGHT, p.pitch) * Vector3.FORWARD
 	var at := p.position + Vector3(0, 1.35, 0) + dir * 0.5
 	var v := dir * THROW_SPEED + Vector3(0, 2.2, 0) + Vector3(p.velocity.x, 0, p.velocity.z) * 0.5
-	if p.pitch < -0.7:  # looking at your feet: set it down
-		v = dir * 2.0
 	return [at, v]
 
+
+## Setting something down: just in front of your feet, gently.
+func _drop_vec(p: Player) -> Array:
+	var fwd := Basis(Vector3.UP, p.yaw) * Vector3.FORWARD
+	var at := p.position + fwd * 0.7 + Vector3(0, 0.5, 0)
+	return [at, Vector3(0, -1.0, 0)]
 
 func _spawn_decoy(at: Vector3, v: Vector3, authority: bool) -> void:
 	var d := Decoy.new()
@@ -983,17 +1056,15 @@ func _spawn_decoy(at: Vector3, v: Vector3, authority: bool) -> void:
 	decoys_out.append(d)
 
 
-## Their bag goes into the rift: banked for the crew, and back out they go.
-func _bank(p: Player) -> void:
-	var brought := 0
-	for i in p.bag:
-		brought += loot[i].value
-		loot[i].set_state(Loot.GONE)
-	p.bag.clear()
-	p.carry = 0.0
-	haul += brought
-	_emit(["bank", p.id, brought, haul])
-
+## The loot sitting on the rift's carpet: what the crew takes home.
+func _pad_value() -> int:
+	var v := 0
+	if exit_node == null:
+		return 0
+	for l in loot:
+		if l.state == Loot.GROUND and exit_node.pad_has(l.position):
+			v += l.value
+	return v
 
 ## Seven minutes. Halfway, the era starts to notice. The last minute, the
 ## rift strains. Then it collapses, and anyone still out there is gone.
@@ -1015,37 +1086,43 @@ func _rift_clock() -> void:
 		strain_sent = 4
 		_emit(["collapse"])
 		for p: Player in alive_players():
-			for i in p.bag:
+			for i in p.items():
 				loot[i].set_state(Loot.GONE)
-			p.bag.clear()
+			p.slots.fill(-1)
 			var fwd := Basis(Vector3.UP, p.yaw) * Vector3.FORWARD
 			_kill(p, p.position + fwd * 2.0 + Vector3(0, 1.0, 0))
 
 
-## Thrown loot: friends catch it by being in the way; eggs that hit the
-## ground crack; every landing is noise.
+## Thrown and dropped loot: friends catch throws by being in the way;
+## eggs that fall hard crack; every landing is noise.
 func _fly_loot() -> void:
 	for l in loot:
 		if l.state != Loot.FLYING:
 			continue
-		if l.air > 0.2:
+		if l.air > 0.2 and l.vel.length() > 3.0:
 			for p: Player in alive_players():
-				if p.bag.size() >= p.bag_max or (p.id == l.thrower and l.air < 0.9):
+				if p.id == l.thrower and l.air < 0.9:
+					continue
+				var h := p.held_item()
+				if h >= 0 and loot[h].two_handed:
+					continue
+				var slot := p.free_slot()
+				if slot < 0 or (l.two_handed and slot != p.held):
 					continue
 				if l.position.distance_to(p.position + Vector3(0, 1.1, 0)) < 1.5:
 					l.set_state(Loot.CARRIED, p.id)
-					p.bag.append(l.idx)
-					p.carry += l.weight
-					_emit(["catch", p.id, l.idx])
+					p.slots[slot] = l.idx
+					p.held = slot
+					_reweigh(p)
+					_emit(["catch", p.id, l.idx, slot])
 					break
 		if l.state == Loot.FLYING and l.landed:
-			var broke := l.fragile and not l.cracked and l.air > 0.4
+			var broke := l.fragile and not l.cracked and l.fall_speed > 7.0
 			if broke:
 				l.crack()
 			l.set_state(Loot.GROUND, 0, l.position)
-			_on_noise(l.position, 12.0)
+			_on_noise(l.position, 12.0 if l.fall_speed > 4.0 else 3.0)
 			_emit(["land", l.idx, l.position.x, l.position.y, l.position.z, 1 if broke else 0])
-
 
 ## Somebody took an egg: its parent knows.
 func _nest_taken(p: Player, at: Vector3) -> void:
@@ -1067,14 +1144,16 @@ func _nest_taken(p: Player, at: Vector3) -> void:
 
 ## Everything they carried falls where they were.
 func _spill(p: Player) -> void:
-	while not p.bag.is_empty():
-		var i: int = p.bag.pop_back()
+	for k in p.slots.size():
+		var i := p.slots[k]
+		if i < 0:
+			continue
+		p.slots[k] = -1
 		var at := p.position + Vector3(randf_range(-1, 1), 0, randf_range(-1, 1))
 		at.y = world.height_at(at.x, at.z)
 		loot[i].set_state(Loot.GROUND, 0, at)
 		_emit(["drop", p.id, i, at.x, at.y, at.z])
 	p.carry = 0.0
-
 
 func _kill(p: Player, at: Vector3) -> void:
 	if p == null or not p.alive or p.through or not sim_on:
@@ -1092,25 +1171,24 @@ func _kill(p: Player, at: Vector3) -> void:
 
 func _through(p: Player) -> void:
 	var brought := 0
-	for i in p.bag:
+	for i in p.items():
 		brought += loot[i].value
 		loot[i].set_state(Loot.GONE)
-	p.bag.clear()
+	p.slots.fill(-1)
 	p.carry = 0.0
-	haul += brought
+	home_value += brought
 	p.through = true
 	p.vanish()
-	_emit(["through", p.id, brought, haul])
-
+	_emit(["through", p.id, brought, home_value])
 
 func _check_end() -> void:
 	if hub or not sim_on or players.is_empty() or not alive_players().is_empty():
 		return
 	sim_on = false
+	haul = home_value + _pad_value()
 	_emit(["end", haul])
 	if mode == "server":
 		Net.room_over(net_room, haul)
-
 
 func emote(id: int, e: int) -> void:
 	var p: Player = players.get(id)
@@ -1129,9 +1207,14 @@ func sync_loot(id: int) -> void:
 		return
 	var a := PackedFloat32Array()
 	for l in loot:
-		a.append_array([l.state, l.holder, l.position.x, l.position.y, l.position.z])
-	Net.room_event_to(id, ["lootall", a, haul])
-
+		var slot := -1
+		if l.state == Loot.CARRIED and players.has(l.holder):
+			slot = (players[l.holder] as Player).slots.find(l.idx)
+		a.append_array([l.state, l.holder, slot, l.position.x, l.position.y, l.position.z])
+	var held := {}
+	for pid in players:
+		held[pid] = players[pid].held
+	Net.room_event_to(id, ["lootall", a, home_value, held])
 
 func _snapshot() -> PackedFloat32Array:
 	var a := PackedFloat32Array([elapsed, players.size()])
@@ -1141,7 +1224,7 @@ func _snapshot() -> PackedFloat32Array:
 			| (8 if p.through else 0) | (16 if p.moving else 0)
 		var slot: int = net_room.members.get(id, {}).get("color", 0)
 		a.append_array([slot, p.position.x, p.position.y, p.position.z, p.yaw, p.pitch, bits, p.seq,
-			p.stamina, p.battery, p.bag.size(), p.talk])
+			p.stamina, p.battery, p.items().size(), p.talk])
 	a.append(hunters.size())
 	for m in hunters:
 		m.net_get(a)
@@ -1258,79 +1341,128 @@ func _name(id: int) -> String:
 	return str(Net.members.get(id, {}).get("name", "someone"))
 
 
+## What someone has: the held item in their hands, the rest on the pack.
 func _refresh_carry(pid: int) -> void:
+	var sl: Array = bags.get(pid, [])
+	if pid == my_id and local:
+		var h := local.held_item()
+		local.set_hand(loot[h].mesh if h >= 0 else null, h >= 0 and loot[h].two_handed)
+		return
 	var av: Avatar = avatars.get(pid)
 	if av == null:
 		return
-	var ms := []
-	for i in bags.get(pid, []):
-		ms.append(loot[i].mesh)
-	av.set_carry(ms)
-
+	var back := []
+	var hand: Mesh = null
+	for k in sl.size():
+		var i: int = sl[k]
+		if i < 0:
+			continue
+		if k == av.held:
+			hand = loot[i].mesh
+		else:
+			back.append(loot[i].mesh)
+	av.set_carry(back)
+	av.set_hand(hand)
 
 func _bag_of(pid: int) -> Array:
 	if not bags.has(pid):
-		bags[pid] = []
+		var a: Array[int] = [-1, -1, -1, -1, -1, -1]
+		bags[pid] = a
 	return bags[pid]
-
 
 func _on_event(ev: Array) -> void:
 	match str(ev[0]):
 		"go":
 			_start()
-		"pick":
+		"pick", "catch":
 			var pid := int(ev[1])
 			var i := int(ev[2])
+			var slot := int(ev[3])
 			if mode == "client":
 				loot[i].set_state(Loot.CARRIED, pid)
-				_bag_of(pid).append(i)
+				_bag_of(pid)[slot] = i
 				if pid == my_id:
-					local.carry += loot[i].weight
+					local.held = slot
+					_reweigh(local)
+				elif avatars.has(pid):
+					avatars[pid].held = slot
 			_refresh_carry(pid)
 			if pid == my_id:
 				sfx.stream = sounds.beep
 				sfx.volume_db = -6.0
 				sfx.play()
-				hud.say([["+ %s   %s" % [loot[i].item_name, Run.cash(loot[i].value)], 2.5]])
-			_update_list()
-		"drop":
-			var pid := int(ev[1])
-			var i := int(ev[2])
-			if mode == "client":
-				loot[i].set_state(Loot.GROUND, 0, Vector3(ev[3], ev[4], ev[5]))
-				_bag_of(pid).erase(i)
-				if pid == my_id:
-					local.carry = maxf(0.0, local.carry - loot[i].weight)
-			_refresh_carry(pid)
-			_update_list()
-		"throw":
-			var pid := int(ev[1])
-			var i := int(ev[2])
-			if mode == "client":
-				loot[i].throw_from(Vector3(ev[3], ev[4], ev[5]), Vector3(ev[6], ev[7], ev[8]), pid)
-				_bag_of(pid).erase(i)
-				if pid == my_id:
-					local.carry = maxf(0.0, local.carry - loot[i].weight)
-			_sound_at(sounds.whoosh, Vector3(ev[3], ev[4], ev[5]), 4.0)
-			_refresh_carry(pid)
-			_update_list()
-		"catch":
-			var pid := int(ev[1])
-			var i := int(ev[2])
-			if mode == "client":
-				loot[i].set_state(Loot.CARRIED, pid)
-				_bag_of(pid).append(i)
-				if pid == my_id:
-					local.carry += loot[i].weight
-			_refresh_carry(pid)
-			if pid == my_id:
-				sfx.stream = sounds.beep
-				sfx.volume_db = -6.0
-				sfx.play()
-				hud.say([["caught it!  %s" % loot[i].item_name, 2.0]])
-			else:
+				if ev[0] == "catch":
+					hud.say([["caught it!", 1.5]])
+			elif ev[0] == "catch":
 				hud.say([["%s caught the %s" % [_name(pid), loot[i].item_name.to_lower()], 2.5]])
 			_update_list()
+		"drop", "throw":
+			var pid := int(ev[1])
+			var i := int(ev[2])
+			if mode == "client":
+				var sl := _bag_of(pid)
+				var k := sl.find(i)
+				if k >= 0:
+					sl[k] = -1
+				if ev[0] == "throw":
+					loot[i].throw_from(Vector3(ev[3], ev[4], ev[5]), Vector3(ev[6], ev[7], ev[8]), pid)
+				else:
+					loot[i].set_state(Loot.GROUND, 0, Vector3(ev[3], ev[4], ev[5]))
+				if pid == my_id:
+					_reweigh(local)
+			if ev[0] == "throw" and Vector3(ev[6], ev[7], ev[8]).length() > 3.0:
+				_sound_at(sounds.whoosh, Vector3(ev[3], ev[4], ev[5]), 4.0)
+			_refresh_carry(pid)
+			_update_list()
+		"hold":
+			var pid := int(ev[1])
+			if pid == my_id:
+				if mode == "client":
+					local.held = int(ev[2])
+			elif avatars.has(pid):
+				avatars[pid].held = int(ev[2])
+			_refresh_carry(pid)
+			_update_list()
+		"lootall":
+			var a: PackedFloat32Array = ev[1]
+			home_value = int(ev[2])
+			var held: Dictionary = ev[3]
+			for pid in bags:
+				bags[pid].fill(-1)
+			for i in loot.size():
+				var st := int(a[i * 6])
+				var who := int(a[i * 6 + 1])
+				var slot := int(a[i * 6 + 2])
+				loot[i].set_state(st, who, Vector3(a[i * 6 + 3], a[i * 6 + 4], a[i * 6 + 5]))
+				if st == Loot.CARRIED and slot >= 0:
+					_bag_of(who)[slot] = i
+			for pid in held:
+				if int(pid) == my_id:
+					local.held = int(held[pid])
+				elif avatars.has(int(pid)):
+					avatars[int(pid)].held = int(held[pid])
+			_reweigh(local)
+			for pid in avatars:
+				_refresh_carry(pid)
+			_refresh_carry(my_id)
+			_update_list()
+		"quota":
+			Net.quota = {"target": int(ev[1]), "banked": int(ev[2]), "left": int(ev[3]), "round": int(ev[4])}
+			_quota_result(str(ev[5]))
+		"through":
+			var pid := int(ev[1])
+			if mode == "client":
+				for i in _bag_of(pid):
+					if i >= 0:
+						loot[i].set_state(Loot.GONE)
+				_bag_of(pid).fill(-1)
+			home_value = int(ev[3])
+			_refresh_carry(pid)
+			_update_list()
+			if pid == my_id:
+				_local_through(int(ev[2]))
+			else:
+				hud.say([["%s went home  +%s" % [_name(pid), Run.cash(int(ev[2]))], 3.5]])
 		"land":
 			var i := int(ev[1])
 			var at := Vector3(ev[2], ev[3], ev[4])
@@ -1347,25 +1479,6 @@ func _on_event(ev: Array) -> void:
 		"decoy":
 			if mode == "client":
 				_spawn_decoy(Vector3(ev[2], ev[3], ev[4]), Vector3(ev[5], ev[6], ev[7]), false)
-		"bank":
-			var pid := int(ev[1])
-			if mode == "client":
-				for i in _bag_of(pid):
-					loot[i].set_state(Loot.GONE)
-				_bag_of(pid).clear()
-				if pid == my_id:
-					local.carry = 0.0
-			haul = int(ev[3])
-			_refresh_carry(pid)
-			_update_list()
-			if pid == my_id:
-				sfx.stream = sounds.bank
-				sfx.volume_db = -2.0
-				sfx.play()
-				banked_flash = 1.0
-				hud.say([["+%s banked" % Run.cash(int(ev[2])), 2.5], ["go back out for more, or E at the door to go home", 3.5]])
-			else:
-				hud.say([["%s banked %s" % [_name(pid), Run.cash(int(ev[2]))], 2.5]])
 		"strain":
 			var lvl := int(ev[1])
 			if exit_node:
@@ -1383,20 +1496,6 @@ func _on_event(ev: Array) -> void:
 				rumble.stop()
 			if local.alive and not local.through:
 				hud.say([["the rift closed without you.", 4.0]])
-		"lootall":
-			var a: PackedFloat32Array = ev[1]
-			haul = int(ev[2])
-			for pid in bags:
-				bags[pid].clear()
-			for i in loot.size():
-				var st := int(a[i * 5])
-				var who := int(a[i * 5 + 1])
-				loot[i].set_state(st, who, Vector3(a[i * 5 + 2], a[i * 5 + 3], a[i * 5 + 4]))
-				if st == Loot.CARRIED:
-					_bag_of(who).append(i)
-			for pid in avatars:
-				_refresh_carry(pid)
-			_update_list()
 		"nest":
 			if mode == "client":
 				nest_taken = int(ev[1])
@@ -1434,19 +1533,6 @@ func _on_event(ev: Array) -> void:
 					av.visible = false
 					get_tree().create_timer(40.0).timeout.connect(rd.queue_free)
 				hud.say([["%s  -  SIGNAL LOST.  their loot is where they fell." % _name(pid), 4.0]])
-		"through":
-			var pid := int(ev[1])
-			if mode == "client":
-				for i in _bag_of(pid):
-					loot[i].set_state(Loot.GONE)
-				_bag_of(pid).clear()
-			haul = int(ev[3])
-			_refresh_carry(pid)
-			_update_list()
-			if pid == my_id:
-				_local_through(int(ev[2]))
-			else:
-				hud.say([["%s made it home  +%s" % [_name(pid), Run.cash(int(ev[2]))], 3.5]])
 		"end":
 			_end(int(ev[1]))
 		"emote":
@@ -1472,6 +1558,21 @@ func _start_rumble(db: float) -> void:
 	rumble.volume_db = db
 	if not rumble.playing:
 		rumble.play()
+
+
+func _quota_result(result: String) -> void:
+	var q := _quota()
+	match result:
+		"met":
+			quota_msg = "QUOTA MET!  next quota: %s in 3 drops" % Run.cash(int(q.target))
+		"fired":
+			quota_msg = "QUOTA MISSED.  the Bureau let you go.\ncredits wiped.  (your hats are safe.)"
+			Run.money = 0
+			Run.save()
+		_:
+			quota_msg = "%s more needed  -  %d drop%s left" % [Run.cash(int(q.target) - int(q.banked)), int(q.left), "" if int(q.left) == 1 else "s"]
+	if mode == "client" and state == "card":
+		hud.card_body.text = hud.card_body.text + "\n\n" + quota_msg
 
 
 func _local_dead(at: Vector3) -> void:
@@ -1503,6 +1604,9 @@ func _local_through(brought: int) -> void:
 func _end(total: int) -> void:
 	end_haul = total
 	var fresh := Run.payout(level, total)
+	if mode == "solo":
+		_quota_result(Run.quota_step(Run.quota, total))
+		Run.save()
 	var was := state
 	state = "card"
 	state_t = 0.0 if mode == "client" or was != "dead" else state_t
@@ -1534,9 +1638,10 @@ func _find_target() -> void:
 			if Vector2(p.x - local.position.x, p.z - local.position.z).length() < 3.2:
 				target_spot = k
 		return
-	if exit_node and exit_node.near_door_of(local) and local.bag.is_empty():
+	if exit_node and exit_node.near_door_of(local) and local.held_item() < 0:
 		target_spot = "rift"
-	if local.bag.size() >= local.bag_max:
+	var h := local.held_item()
+	if local.free_slot() < 0 or (h >= 0 and loot[h].two_handed):
 		return
 	var eye := local.cam.global_position
 	var fwd := -local.cam.global_transform.basis.z
@@ -1557,7 +1662,6 @@ func _find_target() -> void:
 			best = score
 			target_loot = l
 
-
 func _use() -> void:
 	if target_spot == "rift":
 		if mode == "client":
@@ -1575,13 +1679,30 @@ func _use() -> void:
 			act(my_id, 1, target_loot.idx)
 
 
-func _drop() -> void:
-	if local.bag.is_empty() or hub:
+func _drop(throw := false) -> void:
+	if local.held_item() < 0 or hub:
 		return
+	var kind := 6 if throw else 2
 	if mode == "client":
-		Net.act(2, 0)
+		Net.act(kind, 0)
 	else:
-		act(my_id, 2, 0)
+		act(my_id, kind, 0)
+
+## Switch hands, unless both are full of egg.
+func _hold(k: int) -> void:
+	if hub or k == local.held:
+		return
+	var h := local.held_item()
+	if h >= 0 and loot[h].two_handed:
+		hud.say([["both hands are full", 1.2]])
+		return
+	local.held = k
+	_refresh_carry(my_id)
+	_update_list()
+	if mode == "client":
+		Net.act(5, k)
+	else:
+		act(my_id, 5, k)
 
 
 func _throw_decoy() -> void:
@@ -1598,23 +1719,38 @@ func _throw_decoy() -> void:
 	_update_list()
 
 
+func _quota() -> Dictionary:
+	return Net.quota if Net.online and not Net.quota.is_empty() else Run.quota
+
+
+func _quota_text() -> String:
+	return Run.quota_line(_quota())
+
+
 func _update_list() -> void:
 	if hud == null:
 		return
 	if hub:
-		hud.set_list("CHRONO CREDITS\n" + Run.cash(Run.money))
+		hud.set_list("CREDITS  " + Run.cash(Run.money) + "\n\n" + _quota_text())
+		if world.quota_board:
+			var q := _quota()
+			world.quota_board.text = "CHRONO BUREAU  -  QUOTA %d\n%s of %s\n%d drop%s left" % [int(q.round), Run.cash(int(q.banked)),
+				Run.cash(int(q.target)), int(q.left), "" if int(q.left) == 1 else "s"]
+		hud.set_slots([], 0, false)
 		return
-	var lines := ["BAG  %d/%d" % [local.bag.size(), local.bag_max]]
-	for i in local.bag:
-		lines.append("  %s  %s" % [loot[i].item_name, Run.cash(loot[i].value)])
+	var names := []
+	for i in local.slots:
+		names.append(loot[i].item_name if i >= 0 else "")
+	var h := local.held_item()
+	hud.set_slots(names, local.held, h >= 0 and loot[h].two_handed)
+	var lines := ["IN THE RIFT  " + Run.cash(_pad_value() + home_value)]
+	if h >= 0:
+		lines.append("HOLDING  " + loot[h].item_name + "  " + Run.cash(loot[h].value))
 	lines.append("")
-	lines.append("BANKED  " + Run.cash(haul))
+	lines.append(_quota_text())
 	if Run.decoys > 0:
-		lines.append("DECOYS  %d  (Q)" % Run.decoys if not touch else "DECOYS  %d" % Run.decoys)
+		lines.append("DECOYS  %d%s" % [Run.decoys, "" if touch else "  (Q)"])
 	hud.set_list("\n".join(lines))
-
-
-# ================================================================ emotes and voice
 
 func _emote_pressed(e: int) -> void:
 	if emote_cool > 0.0 or state != "play" or not local.alive or local.through:
@@ -1690,7 +1826,7 @@ func _roster_tick(dt: float) -> void:
 			elif not e.alive:
 				st = "  x"
 			elif int(e.bag) > 0:
-				st = "  bag %d" % e.bag
+				st = "  carrying %d" % e.bag
 		if not e.is_empty() and e.alive and float(e.talk) > 0.03:
 			st += "  )))"
 		lines.append([str(m.name) + st, Shop.suit_color(Shop.clean_look(m.get("look", {})).suit)])
@@ -1705,8 +1841,18 @@ func _unhandled_input(e: InputEvent) -> void:
 			_use()
 		elif e.is_action_pressed("drop"):
 			_drop()
+		elif e.is_action_pressed("throw"):
+			_drop(true)
 		elif e.is_action_pressed("decoy"):
 			_throw_decoy()
+		for k in local.slots.size():
+			if e.is_action_pressed("slot%d" % (k + 1)):
+				_hold(k)
+		if e is InputEventMouseButton and e.pressed and not hub:
+			if e.button_index == MOUSE_BUTTON_WHEEL_DOWN:
+				_hold((local.held + 1) % local.slots.size())
+			elif e.button_index == MOUSE_BUTTON_WHEEL_UP:
+				_hold((local.held + local.slots.size() - 1) % local.slots.size())
 		if mode == "client":
 			for k in EMOTES:
 				if e.is_action_pressed("emote%d" % k):
@@ -1783,10 +1929,10 @@ func _solo_card(dt: float) -> void:
 	if state_t > 1.9 and state_t - dt <= 1.9:
 		var foot := ("tap" if touch else "click") + " to go back to the hub"
 		if local.through:
-			hud.show_card("HAUL  " + Run.cash(end_haul), "you made it home", era.title + "  -  " + Run.clock(elapsed), foot, 0.85)
+			hud.show_card("HAUL  " + Run.cash(end_haul), "you made it home", era.title + "  -  " + Run.clock(elapsed) + "\n\n" + quota_msg, foot, 0.85)
 		else:
 			var why := "the rift closed without you" if strain_sent >= 4 else "caught.  your bag is still out there"
-			hud.show_card("SIGNAL LOST", why, era.title + ("   -   banked " + Run.cash(end_haul) if end_haul > 0 else ""), foot, 0.6)
+			hud.show_card("SIGNAL LOST", why, era.title + ("   -   the rift brought back " + Run.cash(end_haul) if end_haul > 0 else "") + "\n\n" + quota_msg, foot, 0.6)
 
 
 ## Co-op death: the grab, a burst of static, then you watch your friends.
@@ -1840,7 +1986,7 @@ func _play_tick(dt: float) -> void:
 		var others := ""
 		for pid in avatars:
 			others += " | %s at %.1f,%.1f" % [avatars[pid].pname, avatars[pid].position.x, avatars[pid].position.z]
-		print("pos %.1f,%.1f yaw %.2f  bag %d haul %d loot %s%s%s" % [local.position.x, local.position.z, local.yaw, local.bag.size(), haul,
+		print("pos %.1f,%.1f yaw %.2f  bag %d haul %d loot %s%s%s" % [local.position.x, local.position.z, local.yaw, local.items().size(), haul,
 			str(loot.slice(0, 3).map(func(l: Loot) -> int: return l.state)),
 			("  hunter " + mill.state) if mill else "", others])
 	hud.clock = elapsed
@@ -1855,26 +2001,30 @@ func _play_tick(dt: float) -> void:
 		target_loot.targeted = true
 		hud.prompt(("GRAB" if touch else "E  grab") + "  %s" % target_loot.item_name)
 	elif target_spot == "rift":
-		hud.prompt(("HOME" if touch else "E") + "  go home now  (banked " + Run.cash(haul) + ")")
+		hud.prompt(("HOME" if touch else "E") + "  go home now   (the crew takes " + Run.cash(_pad_value() + home_value) + ")")
 	elif target_spot != "":
 		hud.prompt(("USE" if touch else "E") + "  " + {"console": "TIME CONSOLE", "shop": "SHOP"}[target_spot])
-	elif not local.bag.is_empty() and exit_node and exit_node.near_door_of(local):
-		hud.prompt("step onto the carpet to bank it")
-	elif local.bag.size() >= local.bag_max and not hub:
-		hud.prompt("bag full  -  take it to the rift  (G throws)" if not touch else "bag full  -  take it to the rift")
+	elif local.held_item() >= 0 and exit_node and exit_node.on_pad(local):
+		hud.prompt(("DROP" if touch else "G") + "  set it down on the carpet")
+	elif local.held_item() >= 0 and loot[local.held_item()].two_handed and not hub:
+		hud.prompt("both hands full" + ("" if touch else "  -  G drop   T throw"))
+	elif local.free_slot() < 0 and not hub:
+		hud.prompt("hands full  -  take it back to the rift")
 	else:
 		hud.prompt("")
+	if not hub and int(state_t * 4.0) != int((state_t - dt) * 4.0):
+		_update_list()
 	if not hub:
 		hud.set_rift(RIFT_TIME - elapsed)
 	if local.touch:
 		local.touch.use_label = "GRAB" if target_loot else ({"rift": "HOME"}.get(target_spot, "USE") if target_spot != "" else "")
-		local.touch.can_drop = not local.bag.is_empty() and not hub
+		local.touch.can_drop = local.held_item() >= 0 and not hub
 		local.touch.decoys = Run.decoys if not hub else 0
 	if mode == "client" and flags.has("emote") and emote_cool <= -2.0:
 		_emote_pressed(int(flags.emote))
-	if mode == "client" and flags.has("throwat") and state_t > float(flags.throwat) and not local.bag.is_empty():
+	if mode == "client" and flags.has("throwat") and state_t > float(flags.throwat) and local.held_item() >= 0:
 		flags.erase("throwat")
-		_drop()
+		_drop(true)
 	if mode == "client" and flags.has("bankat") and state_t > float(flags.bankat):
 		flags.erase("bankat")
 		local.position = exit_node.to_global(Vector3(0, 0, 2.0))
@@ -1893,6 +2043,9 @@ func _play_tick(dt: float) -> void:
 		if m.is_hunting():
 			hunted = 1.0
 	var near := clampf(1.0 - d / 22.0, 0.0, 1.0)
+	for m in hunters:
+		if m is TRex:
+			local.shake = maxf(local.shake, m.quake_at(local.position))
 	hud.glitch = lerpf(hud.glitch, near * near * 0.4, 1.0 - exp(-dt * 4.0))
 	hud.dark = lerpf(hud.dark, 1.0 - local.stamina, 1.0 - exp(-dt * 3.0))
 	local.fear = lerpf(local.fear, maxf(near, hunted * 0.7), 1.0 - exp(-dt * 1.5))

@@ -11,6 +11,8 @@ signal mic
 signal use
 signal drop
 signal decoy
+signal throw
+signal swap
 
 var player: Player
 var coop := false
@@ -46,6 +48,9 @@ func _buttons() -> Dictionary:
 		b["use"] = Vector2(s.x - 62, s.y - 270)
 	if can_drop:
 		b["drop"] = Vector2(s.x - 62, s.y - 350)
+		b["throw"] = Vector2(s.x - 136, s.y - 350)
+	if player and player.items().size() > 0 or can_drop:
+		b["swap"] = Vector2(s.x - 210, s.y - 350)
 	if decoys > 0:
 		b["decoy"] = Vector2(s.x - 136, s.y - 270)
 	if coop:
@@ -72,6 +77,10 @@ func _input(e: InputEvent) -> void:
 				player.toggle_light()
 			elif hit == "crouch":
 				crouch = not crouch
+			elif hit == "throw":
+				throw.emit()
+			elif hit == "swap":
+				swap.emit()
 			elif hit == "jump":
 				jump = true
 			elif hit == "decoy":
@@ -130,7 +139,10 @@ func _draw() -> void:
 	if b.has("use"):
 		_button(b.use, use_label, true)
 	if b.has("drop"):
-		_button(b.drop, "THROW", false)
+		_button(b.drop, "DROP", false)
+		_button(b.throw, "THROW", false)
+	if b.has("swap"):
+		_button(b.swap, "SWAP", false)
 	_button(b.jump, "JUMP", false)
 	if b.has("decoy"):
 		_button(b.decoy, "DECOY %d" % decoys, false)

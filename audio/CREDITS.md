@@ -7,7 +7,8 @@ All recordings are CC0 (public domain), from Freesound. Each was downmixed to mo
 
 - `desertwind.ogg`: "desert_wind.wav" by DarkShroom. https://freesound.org/people/DarkShroom/sounds/645305/
 - `postdrone.ogg`: "Post vibrating in the wind, on the top of the cliff (Desert of Chile)" by felix.blume, trimmed to 84 s and band-limited. https://freesound.org/people/felix.blume/sounds/147588/
+- `junglenight.ogg`: "R28-19-Swamp or Jungle Background.wav" by craigsmith (insects and frogs). https://freesound.org/people/craigsmith/sounds/479575/
 
 Everything else is synthesized in `src/synth.gd`.
 
-Checked by spectrogram: neither recording has birdsong. There were no birds in the Carboniferous.
+Checked by spectrogram: neither recording has birdsong. There were no birds in the Carboniferous or the Permian. The Cretaceous had them, so its track may.

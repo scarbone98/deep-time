@@ -632,7 +632,7 @@ static func scutosaurus() -> Dictionary:
 		octa(st, Vector3(cos(a) * 0.6, 0.55 + sin(a) * 0.45, z), r.randf_range(0.05, 0.1), knob)
 	for sd in [-1.0, 1.0]:
 		octa(st, Vector3(0.22 * sd, 0.45, -1.3), 0.08, knob)
-	return {"body": finish(st, chitin()), "leg": _stumpy_leg(Color(0.34, 0.28, 0.2), 0.5, 0.12)}
+	return {"body": finish(st, chitin()), "leg": _stumpy_leg(Color(0.34, 0.28, 0.2), 0.8, 0.13)}
 
 
 static func _stumpy_leg(c: Color, h: float, r: float) -> ArrayMesh:
@@ -853,9 +853,10 @@ static func _glow_mat() -> StandardMaterial3D:
 static func loot(id: String) -> ArrayMesh:
 	var st := _smooth()
 	match id:
-		"arthro_egg", "scuto_egg", "dicy_egg":
-			var base := {"arthro_egg": Color(0.75, 0.68, 0.5), "scuto_egg": Color(0.92, 0.88, 0.78), "dicy_egg": Color(0.8, 0.72, 0.62)}[id] as Color
-			var size := {"arthro_egg": 0.16, "scuto_egg": 0.2, "dicy_egg": 0.13}[id] as float
+		"arthro_egg", "scuto_egg", "dicy_egg", "trike_egg":
+			var base := {"arthro_egg": Color(0.75, 0.68, 0.5), "scuto_egg": Color(0.92, 0.88, 0.78), "dicy_egg": Color(0.8, 0.72, 0.62),
+				"trike_egg": Color(0.55, 0.62, 0.66)}[id] as Color
+			var size := {"arthro_egg": 0.16, "scuto_egg": 0.2, "dicy_egg": 0.13, "trike_egg": 0.21}[id] as float
 			ball(st, Vector3(0, size * 1.3, 0), size, base, 1.3, 12, 8, base.lightened(0.15))
 			var r := RandomNumberGenerator.new()
 			r.seed = id.hash()
@@ -885,6 +886,31 @@ static func loot(id: String) -> ArrayMesh:
 		"cone":
 			var c := Color(0.45, 0.32, 0.18)
 			tube(st, [Vector3(0, 0.02, 0), Vector3(0, 0.12, 0), Vector3(0, 0.28, 0)], [0.07, 0.08, 0.02], [c.darkened(0.2), c, c.lightened(0.1)], 8, true)
+		"rex_tooth":
+			var c := Color(0.92, 0.86, 0.7)
+			tube(st, [Vector3(0, 0.02, 0), Vector3(0.03, 0.2, 0), Vector3(0.12, 0.42, 0)], [0.07, 0.05, 0.004], [Color(0.55, 0.4, 0.3), c, c.lightened(0.1)], 9)
+		"feather":
+			var c := Color(0.75, 0.32, 0.12)
+			tube(st, [Vector3(0, 0.02, 0.18), Vector3(0, 0.03, -0.2)], [0.008, 0.003], [Color(0.9, 0.85, 0.7), Color(0.9, 0.85, 0.7)], 4)
+			for k in 8:
+				var z := 0.14 - k * 0.045
+				for sd in [-1.0, 1.0]:
+					tri(st, Vector3(0, 0.03, z), Vector3(0, 0.03, z - 0.05), Vector3(0.07 * sd * (1.0 - absf(k - 3.5) / 5.0), 0.035, z - 0.01), c if k % 2 == 0 else Color(0.2, 0.15, 0.12))
+		"ammonite":
+			var c := Color(0.75, 0.65, 0.5)
+			for k in 26:
+				var a0 := k * 0.45
+				var a1 := (k + 1) * 0.45
+				var r0 := 0.03 + a0 * 0.012
+				var r1 := 0.03 + a1 * 0.012
+				tube(st, [Vector3(cos(a0) * r0, 0.08, sin(a0) * r0), Vector3(cos(a1) * r1, 0.08, sin(a1) * r1)], [r0 * 0.45, r1 * 0.45],
+					[c.lerp(Color(0.95, 0.8, 0.6), float(k % 2)), c.lerp(Color(0.95, 0.8, 0.6), float((k + 1) % 2))], 6)
+		"flower":
+			tube(st, [Vector3(0, 0, 0), Vector3(0, 0.25, 0)], [0.012, 0.01], [Color(0.25, 0.45, 0.2), Color(0.25, 0.45, 0.2)], 4)
+			for k in 6:
+				var a := TAU * k / 6.0
+				ball(st, Vector3(cos(a) * 0.06, 0.27, sin(a) * 0.06), 0.05, Color(1.0, 0.78, 0.88), 0.4, 6, 3)
+			ball(st, Vector3(0, 0.28, 0), 0.03, Color(1.0, 0.9, 0.4), 1.0, 6, 3)
 		"tooth":
 			var c := Color(0.95, 0.92, 0.82)
 			tube(st, [Vector3(0, 0.02, 0), Vector3(0.02, 0.14, 0), Vector3(0.07, 0.3, 0)], [0.05, 0.035, 0.004], [c.darkened(0.2), c, c], 8)
@@ -1135,3 +1161,199 @@ static func planet() -> ArrayMesh:
 	m.cull_mode = BaseMaterial3D.CULL_DISABLED
 	m.disable_fog = true
 	return finish(st, m)
+
+
+# ---------------------------------------------------------------- the Cretaceous
+
+## Eyes that catch your lamp and read through fog: the thing you see first.
+static func eye_mat(c: Color) -> StandardMaterial3D:
+	var m := StandardMaterial3D.new()
+	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	m.albedo_color = c
+	m.disable_fog = true
+	return m
+
+
+static func _skin() -> StandardMaterial3D:
+	var m := StandardMaterial3D.new()
+	m.vertex_color_use_as_albedo = true
+	m.roughness = 0.55
+	m.metallic_specular = 0.6
+	m.cull_mode = BaseMaterial3D.CULL_DISABLED
+	return m
+
+
+## A theropod, forward -Z, hips at the origin. Returns meshes for the body,
+## the lower jaw (hinged at `jaw_at`), one leg (hanging from the hip), and
+## the eyes, plus where the parts go. `o` holds the look:
+##   len (tail tip to snout), head (skull size), feathers (bool),
+##   back, belly, stripe (colours), eye (colour)
+static func theropod(o: Dictionary) -> Dictionary:
+	var L: float = o.len
+	var hs: float = o.head
+	var back: Color = o.back
+	var belly: Color = o.belly
+	var stripe: Color = o.stripe
+	var h := L * 0.26  # hip height
+	var st := _smooth()
+	# spine: tail tip -> hips -> chest -> neck -> skull
+	var spine := [
+		Vector3(0, h * 0.9, L * 0.55), Vector3(0, h * 1.0, L * 0.4), Vector3(0, h * 1.05, L * 0.22),
+		Vector3(0, h * 1.05, L * 0.05), Vector3(0, h * 1.02, -L * 0.1), Vector3(0, h * 1.05, -L * 0.2),
+		Vector3(0, h * 1.25, -L * 0.28), Vector3(0, h * 1.45, -L * 0.32)]
+	var bulk: float = o.get("bulk", 1.0)
+	var rad := [0.01, L * 0.03 * bulk, L * 0.05 * bulk, L * 0.075 * bulk, L * 0.08 * bulk, L * 0.07 * bulk, L * 0.045 * (1.0 + hs) * bulk, L * 0.05 * (1.0 + hs)]
+	var cols := []
+	for i in spine.size():
+		cols.append(stripe if i < 4 and i % 2 == 1 else back)
+	tube(st, spine, rad, cols, 12, false, 0.95)
+	# belly, lighter, slung under the ribcage
+	tube(st, [Vector3(0, h * 0.9, L * 0.08), Vector3(0, h * 0.82, -L * 0.08), Vector3(0, h * 0.95, -L * 0.2)],
+		[L * 0.055 * bulk, L * 0.065 * bulk, L * 0.04 * bulk], [belly, belly, belly], 10)
+	# skull and upper jaw
+	var sk: Vector3 = spine[spine.size() - 1]
+	var snout := sk + Vector3(0, -L * 0.01, -L * 0.13 * (0.8 + hs))
+	tube(st, [sk + Vector3(0, 0, L * 0.02), sk + Vector3(0, L * 0.01, -L * 0.04), snout],
+		[L * 0.055 * (1.0 + hs), L * 0.05 * (1.0 + hs), L * 0.02 * (1.0 + hs)], [back, back.lightened(0.05), back.darkened(0.1)], 10, false, 1.1)
+	var tooth := Color(0.95, 0.92, 0.82)
+	for k in 6:
+		var z := lerpf(-L * 0.05, -L * 0.12, k / 5.0) * (0.8 + hs)
+		for sd in [-1.0, 1.0]:
+			tube(st, [sk + Vector3(L * 0.03 * sd * (1.0 + hs) * 0.8, -L * 0.03 * (1.0 + hs), z), sk + Vector3(L * 0.03 * sd * (1.0 + hs) * 0.8, -L * 0.055 * (1.0 + hs), z)],
+				[L * 0.006, 0.0005], [tooth, tooth], 4)
+	# arms, folded; feathered on the raptor
+	for sd in [-1.0, 1.0]:
+		var sh := Vector3(L * 0.05 * sd, h * 1.0, -L * 0.17)
+		var el := sh + Vector3(L * 0.03 * sd, -L * 0.06, L * 0.02)
+		var wr := el + Vector3(0, -L * 0.01, -L * 0.07 * (0.35 if not o.feathers else 1.0))
+		tube(st, [sh, el, wr], [L * 0.018, L * 0.012, L * 0.008], [back, back, back.darkened(0.2)], 6)
+		if o.feathers:
+			for k in 7:
+				var at: Vector3 = el.lerp(wr, k / 6.0)
+				_blade(st, at, Vector3(0.3 * sd, -1.0, 0.25).normalized(), L * 0.07, L * 0.012, 0.0, stripe if k % 2 == 0 else back.darkened(0.2))
+	# feathers down the neck and back, a fan at the tail
+	if o.feathers:
+		for i in range(1, spine.size() - 1):
+			var p: Vector3 = spine[i]
+			for k in 3:
+				var d := Vector3(randf_range(-0.4, 0.4), 1.0, 0.6).normalized()
+				_blade(st, p + Vector3(0, float(rad[i]) * 0.8, 0), d, L * 0.05, L * 0.01, L * 0.01, back.lightened(0.1) if k == 1 else stripe)
+		var tip: Vector3 = spine[0]
+		for k in 9:
+			var a := (k - 4) * 0.22
+			_blade(st, tip + Vector3(0, 0, -L * 0.08), Vector3(sin(a), 0.1, 1.0).normalized(), L * 0.12, L * 0.015, 0.0, stripe if k % 2 == 0 else back)
+	var body := finish(st, _skin())
+	# lower jaw, hinged under the skull
+	st = _smooth()
+	var jaw_at := sk + Vector3(0, -L * 0.035 * (1.0 + hs), L * 0.01)
+	tube(st, [Vector3.ZERO, Vector3(0, -L * 0.005, -L * 0.07 * (0.8 + hs)), Vector3(0, L * 0.005, -L * 0.12 * (0.8 + hs))],
+		[L * 0.035 * (1.0 + hs), L * 0.03 * (1.0 + hs), L * 0.012 * (1.0 + hs)], [belly, belly, belly.darkened(0.1)], 8, false, 0.6)
+	for k in 5:
+		var z := lerpf(-L * 0.03, -L * 0.1, k / 4.0) * (0.8 + hs)
+		for sd in [-1.0, 1.0]:
+			tube(st, [Vector3(L * 0.022 * sd * (1.0 + hs), L * 0.005, z), Vector3(L * 0.022 * sd * (1.0 + hs), L * 0.03 * (1.0 + hs), z)], [L * 0.005, 0.0005], [tooth, tooth], 4)
+	var jaw := finish(st, _skin())
+	# one leg: thigh, shin, foot; the raptor's killing claw held up
+	st = _smooth()
+	var knee := Vector3(0, -h * 0.45, -L * 0.04)
+	var ankle := Vector3(0, -h * 0.8, L * 0.05)
+	var foot := Vector3(0, -h, -L * 0.02)
+	tube(st, [Vector3(0, 0.02, 0), knee, ankle, foot], [L * 0.05 * bulk, L * 0.03 * bulk, L * 0.018 * bulk, L * 0.015 * bulk], [back, back.darkened(0.1), back.darkened(0.2), back.darkened(0.3)], 9)
+	for k in 3:
+		tube(st, [foot, foot + Vector3((k - 1) * L * 0.02, 0, -L * 0.06)], [L * 0.012, L * 0.003], [back.darkened(0.3), Color(0.15, 0.12, 0.1)], 5)
+	if o.feathers:
+		var claw := foot + Vector3(L * 0.012, L * 0.02, -L * 0.01)
+		tube(st, [claw, claw + Vector3(0, L * 0.04, -L * 0.03), claw + Vector3(0, L * 0.02, -L * 0.055)], [L * 0.008, L * 0.005, 0.0005],
+			[Color(0.2, 0.18, 0.15), Color(0.2, 0.18, 0.15), Color(0.85, 0.82, 0.75)], 5)
+	var leg := finish(st, _skin())
+	# eyes, glowing
+	st = _smooth()
+	for sd in [-1.0, 1.0]:
+		ball(st, sk + Vector3(L * 0.04 * sd * (1.0 + hs), L * 0.02 * (1.0 + hs), -L * 0.02), L * 0.011 * (1.0 + hs * 0.5), Color.WHITE, 1.0, 8, 5)
+	var eyes := finish(st, eye_mat(o.eye))
+	return {"body": body, "jaw": jaw, "jaw_at": jaw_at, "leg": leg, "eyes": eyes, "hip": h, "head_at": snout}
+
+
+static func raptor() -> Dictionary:
+	return theropod({"len": 4.2, "head": 0.3, "feathers": true, "back": Color(0.18, 0.15, 0.13),
+		"belly": Color(0.62, 0.5, 0.36), "stripe": Color(0.75, 0.32, 0.12), "eye": Color(1.0, 0.8, 0.2)})
+
+
+static func rex() -> Dictionary:
+	return theropod({"len": 12.0, "head": 0.55, "feathers": false, "bulk": 1.45, "back": Color(0.3, 0.27, 0.2),
+		"belly": Color(0.55, 0.48, 0.38), "stripe": Color(0.22, 0.2, 0.15), "eye": Color(1.0, 0.45, 0.15)})
+
+
+## Triceratops, sized to share the Grazer rig: three horns, a big frill.
+static func triceratops() -> Dictionary:
+	var st := _smooth()
+	var hide := Color(0.42, 0.38, 0.28)
+	var dark := Color(0.28, 0.25, 0.18)
+	var pts := [Vector3(0, 0.3, 1.5), Vector3(0, 0.45, 1.05), Vector3(0, 0.62, 0.5), Vector3(0, 0.66, -0.1),
+		Vector3(0, 0.58, -0.6), Vector3(0, 0.5, -0.9)]
+	tube(st, pts, [0.05, 0.28, 0.55, 0.6, 0.48, 0.3], [dark, hide, hide, hide.lightened(0.05), hide, hide], 12, false, 0.85)
+	var hd := Vector3(0, 0.55, -1.05)
+	tube(st, [hd, hd + Vector3(0, -0.05, -0.35), hd + Vector3(0, -0.18, -0.6)], [0.28, 0.22, 0.08], [hide, hide, dark], 10, false, 1.1)
+	# the frill: a fan of quads behind the head, with a darker rim
+	var n := 14
+	for k in n:
+		var a0 := PI * (0.05 + 0.9 * k / n)
+		var a1 := PI * (0.05 + 0.9 * (k + 1) / n)
+		var c := hd + Vector3(0, 0.1, 0.1)
+		var r := 0.75
+		var p0 := c + Vector3(cos(a0) * r, sin(a0) * r, 0.25)
+		var p1 := c + Vector3(cos(a1) * r, sin(a1) * r, 0.25)
+		tri(st, c, p0, p1, Color(0.62, 0.35, 0.22) if k % 2 == 0 else Color(0.55, 0.3, 0.2))
+		ball(st, p0, 0.05, dark, 1.0, 6, 3)
+	var horn := Color(0.85, 0.8, 0.68)
+	for sd in [-1.0, 1.0]:
+		tube(st, [hd + Vector3(0.14 * sd, 0.2, -0.05), hd + Vector3(0.2 * sd, 0.45, -0.55), hd + Vector3(0.18 * sd, 0.5, -0.85)], [0.07, 0.04, 0.005], [horn, horn, horn], 7)
+		ball(st, hd + Vector3(0.16 * sd, 0.12, -0.2), 0.035, Color(0.05, 0.04, 0.03), 1.0, 6, 3)
+	tube(st, [hd + Vector3(0, -0.05, -0.45), hd + Vector3(0, 0.1, -0.6)], [0.05, 0.005], [horn, horn], 6)
+	return {"body": finish(st, _skin()), "leg": _stumpy_leg(dark, 0.82, 0.14)}
+
+
+## A dawn redwood: a straight trunk under tiers of drooping green.
+static func conifer(rng: RandomNumberGenerator) -> ArrayMesh:
+	var st := begin()
+	var h := rng.randf_range(12.0, 20.0)
+	var bark := Color(0.35, 0.22, 0.15)
+	tube(st, [Vector3.ZERO, Vector3(0, h * 0.5, 0), Vector3(0, h, 0)], [0.55, 0.35, 0.08], [bark.darkened(0.2), bark, bark], 8, true)
+	var tiers := 7
+	for k in tiers:
+		var t := float(k) / tiers
+		var y := lerpf(h * 0.35, h * 0.98, t)
+		var r := lerpf(3.2, 0.7, t)
+		var n := 9
+		for j in n:
+			var a := TAU * j / n + k * 0.4
+			var c := Color(0.12, 0.26, 0.12).lerp(Color(0.2, 0.34, 0.14), rng.randf())
+			frond(st, Vector3(0, y, 0), Vector3(cos(a), 0.15, sin(a)), r, 0.3, c, 0.12, 5)
+	return finish(st, veg())
+
+
+## A cycad: a stubby, scaly trunk with a crown of stiff fronds.
+static func cycad(rng: RandomNumberGenerator) -> ArrayMesh:
+	var st := begin()
+	var h := rng.randf_range(0.8, 2.2)
+	var bark := Color(0.4, 0.3, 0.18)
+	tube(st, [Vector3.ZERO, Vector3(0, h, 0)], [0.4, 0.3], [bark.darkened(0.2), bark], 8, true)
+	for k in 14:
+		var a := TAU * k / 14.0 + rng.randf() * 0.2
+		frond(st, Vector3(0, h, 0), Vector3(cos(a), rng.randf_range(0.5, 1.2), sin(a)), rng.randf_range(1.4, 2.0), 0.25, Color(0.2, 0.36, 0.12), 0.1, 6)
+	ball(st, Vector3(0, h + 0.1, 0), 0.22, Color(0.8, 0.55, 0.2), 1.3, 8, 4)
+	return finish(st, veg())
+
+
+## The first flowers: a magnolia bush, pink and white.
+static func magnolia(rng: RandomNumberGenerator) -> ArrayMesh:
+	var st := begin()
+	for k in 18:
+		var a := rng.randf() * TAU
+		var p := Vector3(cos(a) * rng.randf_range(0.0, 0.9), rng.randf_range(0.4, 1.6), sin(a) * rng.randf_range(0.0, 0.9))
+		octa(st, p, rng.randf_range(0.3, 0.5), Color(0.14, 0.3, 0.14).lerp(Color(0.2, 0.38, 0.16), rng.randf()))
+	for k in 10:
+		var a := rng.randf() * TAU
+		var p := Vector3(cos(a) * 0.9, rng.randf_range(0.8, 1.9), sin(a) * 0.9)
+		octa(st, p, 0.14, Color(1.0, 0.8, 0.88) if k % 2 == 0 else Color(0.98, 0.95, 0.9))
+	return finish(st, veg())

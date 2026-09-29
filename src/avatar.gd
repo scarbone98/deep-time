@@ -49,6 +49,8 @@ var step: AudioStreamPlayer3D
 var yell: AudioStreamPlayer3D
 var sounds: Dictionary
 var stride := 0.0
+var held := 0
+var hand_mi: MeshInstance3D
 
 
 func setup(pid: int, n: String, lk: Dictionary, s: Dictionary, is_preview := false) -> void:
@@ -90,6 +92,10 @@ func setup(pid: int, n: String, lk: Dictionary, s: Dictionary, is_preview := fal
 	cam.rotation.x = PI * 0.5
 	arm_r.add_child(cam)
 	cam.name = "Cam"
+	hand_mi = MeshInstance3D.new()
+	hand_mi.position = Vector3(0, -0.32, -0.25)
+	hand_mi.scale = Vector3.ONE * 0.8
+	arm_l.add_child(hand_mi)
 	lamp = SpotLight3D.new()
 	lamp.position = Vector3(0, 0, -0.2)
 	lamp.spot_range = 30.0
@@ -161,6 +167,11 @@ func _put(parent: Node3D, m: Mesh) -> void:
 	mi.mesh = m
 	parent.add_child(mi)
 	parts_mis.append(mi)
+
+
+## What's in their hands (held out in the free arm).
+func set_hand(m: Mesh) -> void:
+	hand_mi.mesh = m
 
 
 ## Stack whatever they're carrying on their time pack.
@@ -251,6 +262,9 @@ func _process(dt: float) -> void:
 	arm_r.rotation.z = 0.25
 	arm_l.rotation.x = sin(gait + PI) * 0.6 * amp
 	arm_l.rotation.z = -0.15
+	if hand_mi.mesh:
+		arm_l.rotation.x = -1.1
+		arm_l.rotation.z = 0.25
 	if emote_t > 0.0:
 		emote_t -= dt
 		match emote_id:

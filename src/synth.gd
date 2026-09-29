@@ -28,6 +28,7 @@ static func _make() -> Dictionary:
 		"crack": crack(),
 		"call": distant_call(),
 		"beep": beep(),
+		"shriek": shriek(),
 		"squeak": squeak(),
 		"bank": bank(),
 		"crack_egg": crack_egg(),
@@ -427,3 +428,18 @@ static func rumble() -> AudioStreamWAV:
 		lp += (r.randf_range(-1.0, 1.0) - lp) * 0.02
 		s[i] = (sin(TAU * 38.0 * t) * 0.5 + sin(TAU * 41.0 * t) * 0.5) * 0.35 + lp * 2.5
 	return _loop(s, fade)
+
+
+## A raptor's call: a rasping, honking screech that cracks at the top.
+static func shriek() -> AudioStreamWAV:
+	var r := RandomNumberGenerator.new()
+	var s := _buf(1.0)
+	var ph := 0.0
+	for i in s.size():
+		var t := float(i) / RATE
+		var f := 520.0 + 700.0 * sin(PI * minf(t / 0.35, 1.0)) - t * 300.0 + 40.0 * sin(TAU * 38.0 * t)
+		ph += TAU * f / RATE
+		var env := minf(t / 0.03, 1.0) * exp(-t * 2.8)
+		var v := sin(ph) + 0.5 * sin(ph * 2.02) + 0.4 * sin(ph * 3.1) + r.randf_range(-0.6, 0.6)
+		s[i] = clampf(v * 2.0, -1.0, 1.0) * env * 0.55
+	return _wav(s)

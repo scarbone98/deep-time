@@ -25,6 +25,7 @@ var bone_spots: Array = []
 var hub_radius := 0.0  # the hub: walkable disc instead of a square
 var spots := {}  # hub: named interaction points
 var ring: Node3D
+var quota_board: Label3D
 
 
 func generate(seed_: int, era_id: String) -> void:
@@ -34,6 +35,14 @@ func generate(seed_: int, era_id: String) -> void:
 	add_child(_colliders)
 	if era == "hub":
 		_hub()
+		return
+	if era == "cretaceous":
+		_heights(seed_)
+		_pick_points()
+		_terrain()
+		_water()
+		_flora_cretaceous()
+		_logs()
 		return
 	if era == "permian":
 		_heights_permian(seed_)
@@ -158,7 +167,11 @@ func _terrain() -> void:
 			var h := heights[j * (N + 1) + i]
 			var n := tint.get_noise_2d(x, z) * 0.5 + 0.5
 			var col := Color(0.14, 0.12, 0.07).lerp(Color(0.1, 0.15, 0.06), n)
-			if era == "permian":
+			if era == "cretaceous":
+				col = Color(0.2, 0.24, 0.1).lerp(Color(0.3, 0.28, 0.14), n)
+				if h < 0.3:
+					col = col.lerp(Color(0.15, 0.13, 0.08), clampf((0.3 - h) / 0.8, 0.0, 1.0))
+			elif era == "permian":
 				col = Color(0.46, 0.22, 0.12).lerp(Color(0.56, 0.36, 0.2), n)
 				col = col.lerp(Color(0.3, 0.2, 0.16), clampf((2.0 - h) / 2.0, 0.0, 1.0))
 			elif h < 0.3:
@@ -652,6 +665,13 @@ void fragment() {
 		g.name = "Drift%d" % k
 		add_child(g)
 	_hub_dressing()
+	quota_board = Label3D.new()
+	quota_board.font_size = 52
+	quota_board.pixel_size = 0.006
+	quota_board.modulate = Color(1.0, 0.85, 0.4)
+	quota_board.outline_size = 12
+	quota_board.position = console.position + Vector3(0, 3.1, 0)
+	add_child(quota_board)
 	# the console and kiosk are solid
 	for p in [console.position, kiosk.position]:
 		var cs := CollisionShape3D.new()
@@ -905,3 +925,79 @@ void fragment() {
 	sp.mesh = spm
 	sp.position = Vector3(0, 0.3, 0)
 	add_child(sp)
+
+
+func _flora_cretaceous() -> void:
+	var kinds := {
+		"tree": [Meshes.conifer(rng), Meshes.conifer(rng), Meshes.conifer(rng)],
+		"cycad": [Meshes.cycad(rng), Meshes.cycad(rng)],
+		"bush": [Meshes.magnolia(rng), Meshes.magnolia(rng)],
+		"fern": [Meshes.ground_fern(rng), Meshes.ground_fern(rng), Meshes.ground_fern(rng)],
+		"bones": [Meshes.skeleton(rng)],
+	}
+	var vis := {"tree": 115.0, "cycad": 70.0, "bush": 70.0, "fern": 50.0, "bones": 90.0}
+	var buckets := {}
+	var put := func(kind: String, x: float, z: float, y: float, s: float) -> void:
+		var arr: Array = kinds[kind]
+		var v := rng.randi() % arr.size()
+		var key := "%s|%d|%d|%d" % [kind, v, floori(x / 40.0), floori(z / 40.0)]
+		if not buckets.has(key):
+			buckets[key] = []
+		buckets[key].append(Transform3D(Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3.ONE * s), Vector3(x, y, z)))
+	for gz in range(-int(HALF), int(HALF), 8):
+		for gx in range(-int(HALF), int(HALF), 8):
+			var x := gx + rng.randf() * 8.0
+			var z := gz + rng.randf() * 8.0
+			var h := height_at(x, z)
+			if h < -0.3 or rng.randf() > 0.5 or _clear(x, z, 4.0):
+				continue
+			var s := rng.randf_range(0.8, 1.3)
+			put.call("tree", x, z, h - 0.2, s)
+			_add_trunk(x, z, 0.5 * s)
+	for gz in range(-int(HALF), int(HALF), 5):
+		for gx in range(-int(HALF), int(HALF), 5):
+			var x := gx + rng.randf() * 5.0
+			var z := gz + rng.randf() * 5.0
+			var h := height_at(x, z)
+			if h < 0.0 or _clear(x, z, 2.5):
+				continue
+			var r := rng.randf()
+			if r < 0.12:
+				put.call("cycad", x, z, h, rng.randf_range(0.8, 1.3))
+				_add_trunk(x, z, 0.4)
+			elif r < 0.2:
+				put.call("bush", x, z, h, rng.randf_range(0.8, 1.4))
+	for gz in range(-int(HALF), int(HALF), 3):
+		for gx in range(-int(HALF), int(HALF), 3):
+			var x := gx + rng.randf() * 3.0
+			var z := gz + rng.randf() * 3.0
+			var h := height_at(x, z)
+			if h < -0.05 or rng.randf() > 0.5 or _clear(x, z, 1.5):
+				continue
+			put.call("fern", x, z, h, rng.randf_range(0.8, 1.5))
+	for k in 18:
+		var a := rng.randf() * TAU
+		var p := exit_pos + Vector3(cos(a), 0, sin(a)) * rng.randf_range(30.0, 110.0)
+		p.y = height_at(p.x, p.z)
+		if p.y < 0.0:
+			continue
+		put.call("bones", p.x, p.z, p.y - 0.1, rng.randf_range(1.5, 2.5))
+		bone_spots.append(p)
+	for key in buckets:
+		var parts: PackedStringArray = (key as String).split("|")
+		var center := Vector3((int(parts[2]) + 0.5) * 40.0, 0, (int(parts[3]) + 0.5) * 40.0)
+		var arr: Array = buckets[key]
+		var mm := MultiMesh.new()
+		mm.transform_format = MultiMesh.TRANSFORM_3D
+		mm.mesh = kinds[parts[0]][int(parts[1])]
+		mm.instance_count = arr.size()
+		for i in arr.size():
+			var tr: Transform3D = arr[i]
+			tr.origin -= center
+			mm.set_instance_transform(i, tr)
+		var mi := MultiMeshInstance3D.new()
+		mi.multimesh = mm
+		mi.position = center
+		mi.visibility_range_end = float(vis[parts[0]]) * (0.75 if lite else 1.0)
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		add_child(mi)

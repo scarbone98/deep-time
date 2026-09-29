@@ -182,6 +182,11 @@ func on_pad(p: Player) -> bool:
 var strain := 0.0
 
 
+func pad_has(at: Vector3) -> bool:
+	var l := to_local(at)
+	return absf(l.x) < 2.6 and l.z > 0.0 and l.z < 4.4
+
+
 func near_door_of(p: Player) -> bool:
 	return to_local(p.global_position).length() < 3.2
 

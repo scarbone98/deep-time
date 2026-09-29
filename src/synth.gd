@@ -43,14 +43,14 @@ static func _buf(seconds: float) -> PackedFloat32Array:
 	return s
 
 
-static func _wav(s: PackedFloat32Array, loop := false) -> AudioStreamWAV:
+static func _wav(s: PackedFloat32Array, loop := false, rate := RATE) -> AudioStreamWAV:
 	var b := PackedByteArray()
 	b.resize(s.size() * 2)
 	for i in s.size():
 		b.encode_s16(i * 2, int(clampf(s[i], -1.0, 1.0) * 32000.0))
 	var w := AudioStreamWAV.new()
 	w.format = AudioStreamWAV.FORMAT_16_BITS
-	w.mix_rate = RATE
+	w.mix_rate = rate
 	w.data = b
 	if loop:
 		w.loop_mode = AudioStreamWAV.LOOP_FORWARD
@@ -331,3 +331,32 @@ static func flash() -> AudioStreamWAV:
 		var whine := sin(ph) * 0.12 * minf(t / 0.1, 1.0) * clampf((1.0 - t) / 0.2, 0.0, 1.0)
 		s[i] = click * 0.8 + whine
 	return _wav(s)
+
+
+## The hub's music: a slow, warm synth-pad loop (Cmaj7 - Am9 - Fmaj7 - G6)
+## with a twinkly music-box line on top. 16 seconds, seamless. Made only
+## when you're in the hub.
+static func hub_music() -> AudioStreamWAV:
+	var bar := 4.0
+	var chords := [[261.63, 329.63, 392.0, 493.88], [220.0, 261.63, 329.63, 493.88],
+		[174.61, 220.0, 261.63, 329.63], [196.0, 246.94, 293.66, 329.63]]
+	var bells := [659.25, 783.99, 987.77, 783.99, 880.0, 1046.5, 880.0, 659.25,
+		698.46, 880.0, 1046.5, 880.0, 783.99, 987.77, 1174.66, 987.77]
+	var rate := RATE / 2  # soft pads don't need more, and it's half the work
+	var s := PackedFloat32Array()
+	s.resize(int(bar * 4.0 * rate))
+	var n := s.size()
+	for i in n:
+		var t := float(i) / rate
+		var c: int = int(t / bar) % 4
+		var tc := fmod(t, bar)
+		var env := minf(tc / 0.8, 1.0) * minf((bar - tc) / 0.8, 1.0)
+		var v := 0.0
+		for f in chords[c]:
+			v += sin(TAU * f * 0.5 * t) * 0.5 + sin(TAU * f * 0.5 * 1.003 * t) * 0.35
+		v *= env * 0.045
+		var b: int = int(t / 1.0) % bells.size()
+		var tb := fmod(t, 1.0)
+		v += sin(TAU * bells[b] * t) * exp(-tb * 5.0) * 0.06 + sin(TAU * bells[b] * 2.0 * t) * exp(-tb * 9.0) * 0.02
+		s[i] = v
+	return _wav(s, true, rate)

@@ -989,3 +989,149 @@ static func kiosk_mesh() -> ArrayMesh:
 		var c := Color(1.0, 0.45, 0.6) if k % 2 == 0 else Color(1, 1, 1)
 		quad(st, Vector3(x0, 2.6, 0.5), Vector3(x0 + 0.3375, 2.6, 0.5), Vector3(x0 + 0.3375, 2.3, -0.7), Vector3(x0, 2.3, -0.7), c, c)
 	return finish(st, _smooth_mat())
+
+
+# ---------------------------------------------------------------- hub dressing
+
+static func bench() -> ArrayMesh:
+	var st := _smooth()
+	var wood := Color(0.72, 0.5, 0.36)
+	var iron := Color(0.35, 0.36, 0.5)
+	for k in 4:
+		box(st, Vector3(-1.0, 0.42 + 0.0, -0.25 + k * 0.13), Vector3(1.0, 0.47, -0.15 + k * 0.13), wood.lightened(0.05 * (k % 2)))
+	for k in 3:
+		box(st, Vector3(-1.0, 0.6 + k * 0.13, 0.26), Vector3(1.0, 0.7 + k * 0.13, 0.3), wood)
+	for sd in [-1.0, 1.0]:
+		box(st, Vector3(0.85 * sd - 0.04, 0.0, -0.25), Vector3(0.85 * sd + 0.04, 0.45, -0.18), iron)
+		box(st, Vector3(0.85 * sd - 0.04, 0.0, 0.2), Vector3(0.85 * sd + 0.04, 1.0, 0.27), iron)
+	return finish(st, _smooth_mat())
+
+
+static func lamp_post() -> ArrayMesh:
+	var st := _smooth()
+	var iron := Color(0.3, 0.3, 0.45)
+	tube(st, [Vector3(0, 0, 0), Vector3(0, 0.15, 0)], [0.18, 0.14], [iron, iron], 10)
+	tube(st, [Vector3(0, 0.15, 0), Vector3(0, 2.6, 0)], [0.06, 0.05], [iron, iron.lightened(0.1)], 8)
+	tube(st, [Vector3(0, 2.6, 0), Vector3(0, 2.75, 0)], [0.14, 0.1], [iron, iron], 8)
+	tube(st, [Vector3(0, 3.1, 0), Vector3(0, 3.2, 0)], [0.16, 0.02], [iron, iron], 8)
+	return finish(st, _smooth_mat())
+
+
+static func lamp_globe() -> ArrayMesh:
+	var st := _smooth()
+	ball(st, Vector3(0, 2.93, 0), 0.2, Color(1.0, 0.85, 0.55), 1.0, 12, 6)
+	return finish(st, _unshaded())
+
+
+## A round raised bed with a little prehistoric garden in it.
+static func planter(rng: RandomNumberGenerator, r: float) -> ArrayMesh:
+	var st := _smooth()
+	var stone := Color(0.62, 0.58, 0.78)
+	var n := 24
+	for k in n:
+		var a0 := TAU * k / n
+		var a1 := TAU * (k + 1) / n
+		var o0 := Vector3(cos(a0), 0, sin(a0))
+		var o1 := Vector3(cos(a1), 0, sin(a1))
+		quad(st, o0 * r, o1 * r, o1 * r + Vector3(0, 0.5, 0), o0 * r + Vector3(0, 0.5, 0), stone.darkened(0.1), stone)
+		quad(st, o0 * r + Vector3(0, 0.5, 0), o1 * r + Vector3(0, 0.5, 0), o1 * (r - 0.25) + Vector3(0, 0.5, 0), o0 * (r - 0.25) + Vector3(0, 0.5, 0), stone.lightened(0.1), stone.lightened(0.1))
+		var soil := Color(0.3, 0.22, 0.2)
+		tri(st, Vector3(0, 0.45, 0), o0 * (r - 0.25) + Vector3(0, 0.45, 0), o1 * (r - 0.25) + Vector3(0, 0.45, 0), soil)
+	var veg := finish(st, _smooth_mat())
+	return veg
+
+
+static func flowers(rng: RandomNumberGenerator, r: float, count: int) -> ArrayMesh:
+	var st := _smooth()
+	var cols := [Color(1.0, 0.5, 0.8), Color(0.5, 0.9, 1.0), Color(1.0, 0.9, 0.4), Color(0.8, 0.6, 1.0)]
+	for k in count:
+		var a := rng.randf() * TAU
+		var d := sqrt(rng.randf()) * (r - 0.4)
+		var p := Vector3(cos(a) * d, 0.45, sin(a) * d)
+		var h := rng.randf_range(0.2, 0.5)
+		tube(st, [p, p + Vector3(0, h, 0)], [0.015, 0.012], [Color(0.3, 0.6, 0.3), Color(0.3, 0.6, 0.3)], 4)
+		ball(st, p + Vector3(0, h, 0), rng.randf_range(0.05, 0.09), cols[k % cols.size()], 0.7, 8, 4)
+	return finish(st, _unshaded())
+
+
+static func pedestal() -> ArrayMesh:
+	var st := _smooth()
+	var c := Color(0.85, 0.83, 0.95)
+	tube(st, [Vector3(0, 0, 0), Vector3(0, 0.1, 0)], [0.45, 0.42], [c.darkened(0.2), c], 12)
+	tube(st, [Vector3(0, 0.1, 0), Vector3(0, 0.95, 0)], [0.3, 0.3], [c, c], 12)
+	tube(st, [Vector3(0, 0.95, 0), Vector3(0, 1.05, 0)], [0.42, 0.42], [c.lightened(0.1), c.lightened(0.1)], 12)
+	ball(st, Vector3(0, 1.05, 0), 0.42, c.lightened(0.1), 0.001, 12, 2)
+	box(st, Vector3(-0.2, 0.55, -0.32), Vector3(0.2, 0.75, -0.3), Color(1.0, 0.85, 0.4))
+	return finish(st, _smooth_mat())
+
+
+static func glass_dome() -> ArrayMesh:
+	var st := _smooth()
+	var pts := []
+	var rad := []
+	var cols := []
+	for i in 7:
+		var t := i / 6.0
+		pts.append(Vector3(0, 1.05 + t * 0.55, 0))
+		rad.append(0.36 * sqrt(maxf(0.0, 1.0 - pow(t, 3.0))) + 0.001)
+		cols.append(Color(0.8, 0.95, 1.0, 0.22))
+	tube(st, pts, rad, cols, 14)
+	var m := StandardMaterial3D.new()
+	m.vertex_color_use_as_albedo = true
+	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	m.roughness = 0.05
+	m.metallic_specular = 1.0
+	m.cull_mode = BaseMaterial3D.CULL_DISABLED
+	return finish(st, m)
+
+
+## A giant hourglass: a brass frame, glass bulbs, glowing sand.
+static func hourglass() -> Dictionary:
+	var st := _smooth()
+	var brass := Color(0.9, 0.7, 0.35)
+	for y in [0.0, 3.6]:
+		tube(st, [Vector3(0, y, 0), Vector3(0, y + 0.25, 0)], [1.1, 1.1], [brass.darkened(0.2), brass], 16)
+	for k in 4:
+		var a := TAU * k / 4.0 + PI / 4.0
+		var o := Vector3(cos(a), 0, sin(a)) * 0.95
+		tube(st, [o + Vector3(0, 0.25, 0), o + Vector3(0, 3.6, 0)], [0.07, 0.07], [brass, brass], 8)
+	var frame := finish(st, _smooth_mat())
+	st = _smooth()
+	var pts := []
+	var rad := []
+	var cols := []
+	for i in 13:
+		var t := i / 12.0
+		pts.append(Vector3(0, 0.25 + t * 3.35, 0))
+		rad.append(0.08 + 0.72 * pow(absf(t - 0.5) * 2.0, 0.7))
+		cols.append(Color(0.85, 0.95, 1.0, 0.18))
+	tube(st, pts, rad, cols, 16)
+	var gm := StandardMaterial3D.new()
+	gm.vertex_color_use_as_albedo = true
+	gm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	gm.roughness = 0.05
+	gm.cull_mode = BaseMaterial3D.CULL_DISABLED
+	var glass := finish(st, gm)
+	st = _smooth()
+	var sand := Color(0.55, 0.9, 1.0)
+	ball(st, Vector3(0, 0.55, 0), 0.62, sand, 0.45, 14, 6)
+	ball(st, Vector3(0, 2.75, 0), 0.5, sand, 0.5, 14, 6)
+	tube(st, [Vector3(0, 1.0, 0), Vector3(0, 2.3, 0)], [0.03, 0.03], [sand, sand], 6)
+	return {"frame": frame, "glass": glass, "sand": finish(st, _unshaded())}
+
+
+## A ringed planet for the sky.
+static func planet() -> ArrayMesh:
+	var st := _smooth()
+	ball(st, Vector3.ZERO, 1.0, Color(1.0, 0.62, 0.55), 1.0, 20, 12, Color(0.75, 0.45, 0.85))
+	var n := 48
+	for k in n:
+		var a0 := TAU * k / n
+		var a1 := TAU * (k + 1) / n
+		var c := Color(1.0, 0.9, 0.7, 1.0) if k % 2 == 0 else Color(0.95, 0.8, 0.95)
+		quad(st, Vector3(cos(a0), 0, sin(a0)) * 1.4, Vector3(cos(a1), 0, sin(a1)) * 1.4,
+			Vector3(cos(a1), 0, sin(a1)) * 2.0, Vector3(cos(a0), 0, sin(a0)) * 2.0, c, c)
+	var m := _unshaded()
+	m.cull_mode = BaseMaterial3D.CULL_DISABLED
+	m.disable_fog = true
+	return finish(st, m)

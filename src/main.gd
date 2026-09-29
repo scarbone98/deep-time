@@ -171,6 +171,9 @@ func _ready() -> void:
 	# field recordings (CC0, see audio/CREDITS.md)
 	amb = _loop_player(era.loops[0][0], era.loops[0][1])
 	rain = _loop_player(era.loops[1][0], era.loops[1][1])
+	if hub:
+		amb.stream = Synth.hub_music()
+		amb.volume_db = -8.0
 	hud.date.text = era.date
 	sfx = AudioStreamPlayer.new()
 	add_child(sfx)
@@ -815,6 +818,17 @@ func net_input(id: int, a: PackedFloat32Array) -> void:
 	p.net_crouch = bits & 2 != 0
 	p.net_light = bits & 4 != 0
 	p.talk = clampf(a[6], 0.0, 1.0)
+	# Where the client says it is. Its own movement is what the player sees,
+	# so trust it unless it's moved further than it could have.
+	if a.size() >= 9:
+		var now := Time.get_ticks_msec() / 1000.0
+		var gap := clampf(now - p.last_input_t, 0.0, 0.5) if p.last_input_t > 0.0 else 0.05
+		p.last_input_t = now
+		var claim := Vector3(a[7], 0.0, a[8])
+		var reach := Player.RUN * 1.6 * gap + 0.6
+		if Vector2(claim.x - p.position.x, claim.z - p.position.z).length() <= reach:
+			p.position.x = claim.x
+			p.position.z = claim.z
 
 
 ## Cabinet video: lamp on, a slow look around while it crosses in front.
@@ -1015,7 +1029,8 @@ func _client_tick() -> void:
 	in_seq += 1
 	var bits := (1 if local.last_sprint else 0) | (2 if local.crouching else 0) | (4 if local.light.visible else 0)
 	var talk := 0.0 if Net.voice.muted else Net.voice.level
-	Net.send_input(PackedFloat32Array([in_seq, local.last_move.x, local.last_move.y, local.yaw, local.pitch, bits, talk]))
+	Net.send_input(PackedFloat32Array([in_seq, local.last_move.x, local.last_move.y, local.yaw, local.pitch, bits, talk,
+		local.position.x, local.position.z]))
 	sent[in_seq] = local.position
 
 
@@ -1075,20 +1090,18 @@ func _on_snap(a: PackedFloat32Array) -> void:
 func _reconcile(pos: Vector3, seq: int, stam: float, batt: float) -> void:
 	if not local.alive or local.through:
 		return
+	# Our own movement is trusted; the server only overrules a big gap
+	# (it refused a move, or we fell badly out of step).
 	if sent.has(seq):
 		var err: Vector3 = pos - sent[seq]
 		err.y = 0.0
-		var fix := Vector3.ZERO
-		if err.length() > 4.0:
-			fix = err
-		elif err.length() > 0.05:
-			fix = err * 0.2
-		local.position += fix
-		for k in sent.keys():
-			if k <= seq:
-				sent.erase(k)
-			else:
-				sent[k] += fix
+		if err.length() > 3.0:
+			local.position += err
+			sent.clear()
+		else:
+			for k in sent.keys():
+				if k <= seq:
+					sent.erase(k)
 	if absf(local.stamina - stam) > 0.15:
 		local.stamina = stam
 	local.battery = batt

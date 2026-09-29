@@ -48,6 +48,7 @@ var seq := 0
 var through := false
 var last_move := Vector2.ZERO
 var last_sprint := false
+var last_input_t := 0.0
 var bot := false  # dev: walk in circles
 var bag: Array[int] = []  # loot indices carried
 var carry := 0.0  # their total weight: slower, louder
@@ -108,7 +109,9 @@ func _unhandled_input(e: InputEvent) -> void:
 	if not control or input_mode != "local":
 		return
 	if e is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
-		look(e.relative * 0.0022)
+		# Chrome's pointer lock sometimes reports one huge bogus jump: skip those
+		if e.relative.length() < 250.0:
+			look(e.relative * 0.0022)
 	if e.is_action_pressed("light"):
 		toggle_light()
 
@@ -118,6 +121,7 @@ func look(d: Vector2) -> void:
 		return
 	yaw -= d.x
 	pitch = clampf(pitch - d.y, -1.35, 1.35)
+	_look_now()
 
 
 func toggle_light() -> void:
@@ -125,7 +129,27 @@ func toggle_light() -> void:
 		light.visible = not light.visible
 
 
+## The player you're looking through moves every rendered frame, so the
+## camera stays smooth on any refresh rate; everyone the server simulates
+## moves on the physics tick.
+func _process(dt: float) -> void:
+	if view and input_mode == "local":
+		_tick(dt)
+	elif view:
+		_look_now()
+
+
 func _physics_process(dt: float) -> void:
+	if not (view and input_mode == "local"):
+		_tick(dt)
+
+
+func _look_now() -> void:
+	rotation.y = yaw
+	head.rotation.x = pitch
+
+
+func _tick(dt: float) -> void:
 	t += dt
 	if dying > 0.0:
 		_death_cam(dt)

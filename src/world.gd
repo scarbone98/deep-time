@@ -645,6 +645,7 @@ void fragment() {
 		g.rotation = Vector3(rng.randf() * TAU, rng.randf() * TAU, 0)
 		g.name = "Drift%d" % k
 		add_child(g)
+	_hub_dressing()
 	# the console and kiosk are solid
 	for p in [console.position, kiosk.position]:
 		var cs := CollisionShape3D.new()
@@ -663,6 +664,238 @@ func _process(dt: float) -> void:
 			if c.name.begins_with("Drift"):
 				c.rotation.x += dt * 0.05
 				c.rotation.y += dt * 0.03
+			elif c.name == "Planet":
+				c.rotation.y += dt * 0.02
+			elif c.name.begins_with("Show"):
+				c.rotation.y += dt * 0.6
 			elif c.name == "ShopHat":
 				c.rotation.y += dt * 1.2
 				c.position.y = 1.4 + sin(Time.get_ticks_msec() / 500.0) * 0.08
+
+
+## Everything that makes the hub feel like somewhere: sky, garden, benches,
+## lamps and fairy lights, the museum, the hourglass, sparkles, a sign.
+func _hub_dressing() -> void:
+	# the sky: a slow nebula on a big inside-out sphere, and a planet
+	var sky := MeshInstance3D.new()
+	var sm := SphereMesh.new()
+	sm.radius = 140.0
+	sm.height = 280.0
+	sm.radial_segments = 24
+	sm.rings = 12
+	var sh := Shader.new()
+	sh.code = """shader_type spatial;
+render_mode unshaded, cull_front, fog_disabled;
+varying vec3 dir;
+void vertex() { dir = normalize(VERTEX); }
+float h(vec3 p) { return fract(sin(dot(p, vec3(12.9898, 78.233, 37.719))) * 43758.5453); }
+float n(vec3 p) {
+	vec3 i = floor(p); vec3 f = fract(p); f = f * f * (3.0 - 2.0 * f);
+	return mix(mix(mix(h(i), h(i + vec3(1,0,0)), f.x), mix(h(i + vec3(0,1,0)), h(i + vec3(1,1,0)), f.x), f.y),
+		mix(mix(h(i + vec3(0,0,1)), h(i + vec3(1,0,1)), f.x), mix(h(i + vec3(0,1,1)), h(i + vec3(1,1,1)), f.x), f.y), f.z);
+}
+void fragment() {
+	vec3 d = dir;
+	float t = TIME * 0.01;
+	float c = n(d * 2.5 + t) * 0.6 + n(d * 5.0 - t) * 0.3 + n(d * 11.0) * 0.1;
+	vec3 base = mix(vec3(0.05, 0.03, 0.14), vec3(0.09, 0.05, 0.22), d.y * 0.5 + 0.5);
+	vec3 neb = mix(vec3(0.55, 0.2, 0.6), vec3(0.15, 0.45, 0.75), n(d * 1.3));
+	ALBEDO = base + neb * smoothstep(0.45, 0.85, c) * 0.55;
+}"""
+	var skm := ShaderMaterial.new()
+	skm.shader = sh
+	sm.material = skm
+	sky.mesh = sm
+	add_child(sky)
+	var pl := MeshInstance3D.new()
+	pl.mesh = Meshes.planet()
+	pl.position = Vector3(-60, 45, -80)
+	pl.scale = Vector3.ONE * 14.0
+	pl.rotation = Vector3(0.35, 0.0, 0.25)
+	pl.name = "Planet"
+	add_child(pl)
+	# the garden in the middle, with benches round it
+	var garden := MeshInstance3D.new()
+	garden.mesh = Meshes.planter(rng, 1.8)
+	garden.position = Vector3(0, 0, 0.5)
+	add_child(garden)
+	var fl := MeshInstance3D.new()
+	fl.mesh = Meshes.flowers(rng, 1.8, 26)
+	fl.position = garden.position
+	add_child(fl)
+	for k in 3:
+		var gf := MeshInstance3D.new()
+		gf.mesh = Meshes.ground_fern(rng)
+		var a := TAU * k / 3.0
+		gf.position = garden.position + Vector3(cos(a), 0.45, sin(a)) * 1.0
+		gf.scale = Vector3.ONE * 0.7
+		add_child(gf)
+	var gcs := CollisionShape3D.new()
+	var gcy := CylinderShape3D.new()
+	gcy.radius = 1.8
+	gcy.height = 2.0
+	gcs.shape = gcy
+	gcs.position = garden.position + Vector3(0, 1.0, 0)
+	_colliders.add_child(gcs)
+	var bench_mesh := Meshes.bench()
+	for a in [PI * 0.15, PI * 0.85, PI * 1.35, PI * 1.65]:
+		var b := MeshInstance3D.new()
+		b.mesh = bench_mesh
+		var at := garden.position + Vector3(cos(a), 0, sin(a)) * 3.2
+		b.position = at
+		b.rotation.y = -a - PI * 0.5
+		add_child(b)
+	# lamp posts round the rim, strung with fairy lights
+	var post := Meshes.lamp_post()
+	var globe := Meshes.lamp_globe()
+	var posts := []
+	for k in 10:
+		var a := TAU * k / 10.0 + 0.2
+		var p := Vector3(cos(a), 0, sin(a)) * 13.8
+		posts.append(p)
+		for m in [post, globe]:
+			var mi := MeshInstance3D.new()
+			mi.mesh = m
+			mi.position = p
+			add_child(mi)
+		if k % 3 == 0:
+			var ol := OmniLight3D.new()
+			ol.position = p + Vector3(0, 2.9, 0)
+			ol.omni_range = 7.0
+			ol.light_energy = 1.0
+			ol.light_color = Color(1.0, 0.8, 0.55)
+			add_child(ol)
+	var fst := Meshes._smooth()
+	var fcols := [Color(1.0, 0.5, 0.7), Color(0.5, 0.95, 1.0), Color(1.0, 0.9, 0.4), Color(0.7, 1.0, 0.6)]
+	for k in posts.size():
+		var p0: Vector3 = posts[k] + Vector3(0, 2.7, 0)
+		var p1: Vector3 = posts[(k + 1) % posts.size()] + Vector3(0, 2.7, 0)
+		for j in range(1, 12):
+			var t := j / 12.0
+			var q := p0.lerp(p1, t) + Vector3(0, -sin(PI * t) * 0.8, 0)
+			Meshes.ball(fst, q, 0.11, fcols[(j + k) % fcols.size()], 1.0, 6, 3)
+	var fairy := MeshInstance3D.new()
+	fairy.mesh = Meshes.finish(fst, Meshes._unshaded())
+	add_child(fairy)
+	# the museum: loot from every era, under glass
+	var ped := Meshes.pedestal()
+	var dome := Meshes.glass_dome()
+	var shows := ["arthro_egg", "scuto_egg", "amber", "tooth", "dicy_egg"]
+	for k in shows.size():
+		var a := PI * 0.78 + (k - 2) * 0.17
+		var p := Vector3(cos(a), 0, sin(a)) * 10.8
+		for m in [ped, dome]:
+			var mi := MeshInstance3D.new()
+			mi.mesh = m
+			mi.position = p
+			mi.rotation.y = -a + PI * 0.5
+			add_child(mi)
+		var item := MeshInstance3D.new()
+		item.mesh = Meshes.loot(shows[k])
+		item.position = p + Vector3(0, 1.08, 0)
+		item.scale = Vector3.ONE * 1.3
+		item.name = "Show%d" % k
+		add_child(item)
+		var cs := CollisionShape3D.new()
+		var cy := CylinderShape3D.new()
+		cy.radius = 0.45
+		cy.height = 2.0
+		cs.shape = cy
+		cs.position = p + Vector3(0, 1.0, 0)
+		_colliders.add_child(cs)
+	var ml := Label3D.new()
+	ml.text = "THE MUSEUM OF DEEP TIME"
+	ml.font_size = 48
+	ml.pixel_size = 0.006
+	ml.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	ml.modulate = Color(1.0, 0.9, 0.6)
+	ml.outline_size = 10
+	ml.position = Vector3(cos(PI * 0.78), 0, sin(PI * 0.78)) * 10.8 + Vector3(0, 2.3, 0)
+	add_child(ml)
+	# the hourglass
+	var hg := Meshes.hourglass()
+	var hp := Vector3(-7.5, 0, -6.5)
+	for m in [hg.frame, hg.sand, hg.glass]:
+		var mi := MeshInstance3D.new()
+		mi.mesh = m
+		mi.position = hp
+		add_child(mi)
+	var hl := OmniLight3D.new()
+	hl.position = hp + Vector3(0, 1.8, 0)
+	hl.omni_range = 6.0
+	hl.light_energy = 1.0
+	hl.light_color = Color(0.5, 0.9, 1.0)
+	add_child(hl)
+	var hcs := CollisionShape3D.new()
+	var hcy := CylinderShape3D.new()
+	hcy.radius = 1.15
+	hcy.height = 4.0
+	hcs.shape = hcy
+	hcs.position = hp + Vector3(0, 2.0, 0)
+	_colliders.add_child(hcs)
+	# a big neon sign over the ring
+	var sign := Label3D.new()
+	sign.text = "CHRONO HUB"
+	sign.font_size = 96
+	sign.pixel_size = 0.012
+	sign.modulate = Color(1.0, 0.55, 0.85)
+	sign.outline_modulate = Color(0.3, 0.05, 0.3)
+	sign.outline_size = 18
+	sign.position = Vector3(0, 11.2, -11)
+	add_child(sign)
+	# the back of the deck: a cargo corner of loot crates and potted ferns
+	var crate_st := Meshes._smooth()
+	var wood := Color(0.62, 0.44, 0.3)
+	var boxes := [[Vector3(4.5, 0, 9.5), 1.0], [Vector3(5.6, 0, 9.0), 0.8], [Vector3(5.0, 1.0, 9.3), 0.7],
+		[Vector3(-5.5, 0, 9.2), 0.9], [Vector3(-6.4, 0, 8.4), 0.7]]
+	for b in boxes:
+		var p: Vector3 = b[0]
+		var h: float = b[1]
+		Meshes.box(crate_st, p - Vector3(h * 0.5, 0, h * 0.5), p + Vector3(h * 0.5, h, h * 0.5), wood)
+		Meshes.box(crate_st, p - Vector3(h * 0.52, -h * 0.4, h * 0.52), p + Vector3(h * 0.52, h * 0.6, h * 0.52), wood.darkened(0.3))
+		Meshes.box(crate_st, p + Vector3(-h * 0.2, h * 0.45, -h * 0.53), p + Vector3(h * 0.2, h * 0.55, -h * 0.51), Color(1.0, 0.8, 0.3))
+		if p.y == 0.0:
+			var cs := CollisionShape3D.new()
+			var bx := BoxShape3D.new()
+			bx.size = Vector3(h, 2.0, h)
+			cs.shape = bx
+			cs.position = p + Vector3(0, 1.0, 0)
+			_colliders.add_child(cs)
+	var crates := MeshInstance3D.new()
+	crates.mesh = Meshes.finish(crate_st, Meshes._smooth_mat())
+	add_child(crates)
+	var pot := Meshes._smooth()
+	for k in 6:
+		var a := PI * 0.3 + k * PI * 0.08
+		var p := Vector3(cos(a), 0, sin(a)) * 12.3
+		Meshes.tube(pot, [p, p + Vector3(0, 0.55, 0)], [0.3, 0.38], [Color(0.9, 0.55, 0.45), Color(0.95, 0.65, 0.5)], 10)
+		var gf := MeshInstance3D.new()
+		gf.mesh = Meshes.ground_fern(rng)
+		gf.position = p + Vector3(0, 0.5, 0)
+		gf.scale = Vector3.ONE * 0.8
+		add_child(gf)
+	var pots := MeshInstance3D.new()
+	pots.mesh = Meshes.finish(pot, Meshes._smooth_mat())
+	add_child(pots)
+	# sparkles drifting up through everything
+	var sp := CPUParticles3D.new()
+	sp.amount = 90
+	sp.lifetime = 6.0
+	sp.preprocess = 6.0
+	sp.emission_shape = CPUParticles3D.EMISSION_SHAPE_BOX
+	sp.emission_box_extents = Vector3(14, 0.5, 14)
+	sp.direction = Vector3.UP
+	sp.spread = 20.0
+	sp.gravity = Vector3.ZERO
+	sp.initial_velocity_min = 0.2
+	sp.initial_velocity_max = 0.6
+	var spm := QuadMesh.new()
+	spm.size = Vector2(0.06, 0.06)
+	var spmat := StandardMaterial3D.new()
+	spmat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	spmat.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
+	spmat.albedo_color = Color(0.8, 0.95, 1.0)
+	spm.material = spmat
+	sp.mesh = spm
+	sp.position = Vector3(0, 0.3, 0)
+	add_child(sp)

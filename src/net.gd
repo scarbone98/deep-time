@@ -17,7 +17,7 @@ signal snapshot(data: PackedFloat32Array)
 signal event(ev: Array)
 signal left
 
-const VERSION := 2
+const VERSION := 3
 const MAX_PLAYERS := 4
 const DEFAULT_URL := "wss://deep-time-coop.fly.dev"
 const CODE_ALPHABET := "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"

@@ -279,14 +279,10 @@ func _tick(dt: float) -> void:
 		accel = 9.0
 	hv = hv.move_toward(want, accel * dt)
 	velocity = hv
-	# move_and_slide steps by the physics delta; scale so a frame of any
-	# length moves exactly its own share
-	var pdt := get_physics_process_delta_time()
-	var keep := velocity
-	if dt > 0.0:
-		velocity = keep * (dt / pdt)
-		move_and_slide()
-		velocity = Vector3(velocity.x, 0.0, velocity.z) * (pdt / dt)
+	# move_and_slide uses whichever delta the current frame has (render or
+	# physics), so the velocity goes in as it is
+	move_and_slide()
+	velocity.y = 0.0
 	if world.hub_radius > 0.0:
 		var flat := Vector2(position.x, position.z).limit_length(world.hub_radius)
 		position.x = flat.x
@@ -332,7 +328,7 @@ func _tick(dt: float) -> void:
 
 	# breathing: loud when winded, and loud enough to be felt nearby
 	var winded := 1.0 - stamina
-	breath.volume_db = linear_to_db(clampf(winded * 1.4 - 0.25, 0.0, 1.0) * 0.8 + 0.0001)
+	breath.volume_db = linear_to_db(clampf(winded * 1.3 - 0.35, 0.0, 1.0) * 0.18 + 0.0001)
 	if exhausted:
 		breath_noise -= dt
 		if breath_noise <= 0.0:

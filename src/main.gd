@@ -572,7 +572,7 @@ func _environment() -> void:
 func _input_map() -> void:
 	var m := {
 		"fwd": [KEY_W, KEY_UP], "back": [KEY_S, KEY_DOWN], "left": [KEY_A, KEY_LEFT], "right": [KEY_D, KEY_RIGHT],
-		"sprint": [KEY_SHIFT], "crouch": [KEY_C, KEY_CTRL], "light": [KEY_F], "use": [KEY_E], "drop": [KEY_G], "jump": [KEY_SPACE], "decoy": [KEY_Q],
+		"sprint": [KEY_SHIFT], "crouch": [KEY_C], "light": [KEY_F], "use": [KEY_E], "drop": [KEY_G], "jump": [KEY_SPACE], "decoy": [KEY_Q],
 		"sens_down": [KEY_BRACKETLEFT], "sens_up": [KEY_BRACKETRIGHT],
 		"slot1": [KEY_1], "slot2": [KEY_2], "slot3": [KEY_3], "slot4": [KEY_4], "slot5": [KEY_5], "slot6": [KEY_6],
 		"throw": [KEY_T], "emote1": [KEY_Z], "emote2": [KEY_X], "emote3": [KEY_V], "emote4": [KEY_B], "mute": [KEY_M],

@@ -172,6 +172,20 @@ func inside(p: Player = null) -> bool:
 	return absf(l.x) < 0.5 and absf(l.z) < 0.3
 
 
+## Standing on the carpet in front of the door: loot gets banked here.
+func on_pad(p: Player) -> bool:
+	var l := to_local(p.global_position)
+	return absf(l.x) < 2.5 and l.z > 0.15 and l.z < 4.3
+
+
+## How close to collapse, 0..1: the light stutters and the hum wavers.
+var strain := 0.0
+
+
+func near_door_of(p: Player) -> bool:
+	return to_local(p.global_position).length() < 3.2
+
+
 func near_door() -> bool:
 	return to_local(player.global_position).length() < 3.0
 
@@ -187,6 +201,9 @@ func _process(dt: float) -> void:
 	if next_flicker <= 0.0:
 		flicker = randf_range(0.2, 0.9)
 		next_flicker = randf_range(3.0, 11.0)
+	if strain > 0.0 and randf() < strain * dt * 6.0:
+		flicker = maxf(flicker, randf_range(0.1, 0.4))
+	hum.pitch_scale = 1.0 + sin(t * (3.0 + strain * 20.0)) * 0.05 * strain
 	var on := 1.0
 	if flicker > 0.0:
 		flicker -= dt

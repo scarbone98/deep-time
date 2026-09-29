@@ -28,6 +28,11 @@ static func _make() -> Dictionary:
 		"crack": crack(),
 		"call": distant_call(),
 		"beep": beep(),
+		"squeak": squeak(),
+		"bank": bank(),
+		"crack_egg": crack_egg(),
+		"whoosh": whoosh(),
+		"rumble": rumble(),
 		"scream": scream(),
 		"flash": flash(),
 		"growl": growl(),
@@ -360,3 +365,65 @@ static func hub_music() -> AudioStreamWAV:
 		v += sin(TAU * bells[b] * t) * exp(-tb * 5.0) * 0.06 + sin(TAU * bells[b] * 2.0 * t) * exp(-tb * 9.0) * 0.02
 		s[i] = v
 	return _wav(s, true, rate)
+
+
+## A rubber toy being squeezed: a quick wobbly up-down chirp.
+static func squeak() -> AudioStreamWAV:
+	var s := _buf(0.35)
+	var ph := 0.0
+	for i in s.size():
+		var t := float(i) / RATE
+		var f := 1400.0 + 900.0 * sin(PI * t / 0.35) + 120.0 * sin(TAU * 30.0 * t)
+		ph += TAU * f / RATE
+		var env := sin(PI * t / 0.35)
+		s[i] = (sin(ph) * 0.6 + sin(ph * 2.0) * 0.2) * env * 0.5
+	return _wav(s)
+
+
+## Banked: two bright coin pings.
+static func bank() -> AudioStreamWAV:
+	var s := _buf(0.6)
+	for i in s.size():
+		var t := float(i) / RATE
+		var a := sin(TAU * 1318.5 * t) * exp(-t * 9.0)
+		var t2 := maxf(0.0, t - 0.09)
+		var b := sin(TAU * 1975.5 * t2) * exp(-t2 * 7.0) if t > 0.09 else 0.0
+		s[i] = (a + b) * 0.3
+	return _wav(s)
+
+
+## An eggshell giving way: a crunchy crackle and a wet plop.
+static func crack_egg() -> AudioStreamWAV:
+	var r := RandomNumberGenerator.new()
+	var s := _buf(0.5)
+	for i in s.size():
+		var t := float(i) / RATE
+		var crackle := r.randf_range(-1.0, 1.0) * exp(-t * 18.0) * (1.0 if r.randf() < 0.4 else 0.2)
+		var plop := sin(TAU * (220.0 - t * 200.0) * t) * exp(-t * 10.0) * minf(t / 0.04, 1.0)
+		s[i] = crackle * 0.6 + plop * 0.4
+	return _wav(s)
+
+
+## Something thrown past your ear.
+static func whoosh() -> AudioStreamWAV:
+	var r := RandomNumberGenerator.new()
+	var s := _buf(0.35)
+	var lp := 0.0
+	for i in s.size():
+		var t := float(i) / RATE
+		lp += (r.randf_range(-1.0, 1.0) - lp) * lerpf(0.05, 0.4, t / 0.35)
+		s[i] = lp * sin(PI * t / 0.35) * 0.8
+	return _wav(s)
+
+
+## The rift straining: a deep, beating rumble. Loops.
+static func rumble() -> AudioStreamWAV:
+	var r := RandomNumberGenerator.new()
+	var fade := 2205
+	var s := _buf(2.0 + 0.1)
+	var lp := 0.0
+	for i in s.size():
+		var t := float(i) / RATE
+		lp += (r.randf_range(-1.0, 1.0) - lp) * 0.02
+		s[i] = (sin(TAU * 38.0 * t) * 0.5 + sin(TAU * 41.0 * t) * 0.5) * 0.35 + lp * 2.5
+	return _loop(s, fade)

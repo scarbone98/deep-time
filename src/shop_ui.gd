@@ -76,7 +76,7 @@ func _ready() -> void:
 	root.add_child(right)
 	var tabrow := HBoxContainer.new()
 	right.add_child(tabrow)
-	for k in [["suit", "SUITS"], ["hat", "HATS"], ["face", "FACES"]]:
+	for k in [["suit", "SUITS"], ["hat", "HATS"], ["face", "FACES"], ["gear", "GEAR"]]:
 		var b := Button.new()
 		b.text = k[1]
 		b.toggle_mode = true
@@ -128,6 +128,10 @@ func _show_tab(k: String) -> void:
 	money_label.text = Run.cash(Run.money)
 	for c in grid.get_children():
 		c.queue_free()
+	grid.columns = 1 if k == "gear" else 2
+	if k == "gear":
+		_gear_tab()
+		return
 	for it in Shop.tab(k):
 		var b := Button.new()
 		var wearing: bool = Run.look[k] == it.id
@@ -144,6 +148,31 @@ func _show_tab(k: String) -> void:
 		b.pressed.connect(_pick.bind(k, it.id))
 		b.mouse_entered.connect(_try_on.bind(k, it.id))
 		b.mouse_exited.connect(func() -> void: preview.set_look(Run.look))
+		grid.add_child(b)
+
+
+func _gear_tab() -> void:
+	for it in Shop.GEAR:
+		var b := Button.new()
+		var cost := Shop.gear_cost(it.id)
+		var have := ""
+		if it.id == "decoy":
+			have = "  (have %d)" % Run.decoys
+		else:
+			have = "  (level %d)" % int(Run.gear[it.id])
+		b.text = "%s%s\n%s\n%s" % [it.name, have, "MAXED" if cost < 0 else Run.cash(cost), it.about]
+		b.add_theme_font_size_override("font_size", 10)
+		b.custom_minimum_size = Vector2(0, 54)
+		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		if cost < 0 or Run.money < cost:
+			b.modulate = Color(1, 1, 1, 0.5)
+		b.pressed.connect(func() -> void:
+			var err := Run.buy_gear(it.id)
+			msg.text = err if err != "" else "got it!"
+			if err == "":
+				preview.emote(1)
+				looked.emit()
+			_show_tab("gear"))
 		grid.add_child(b)
 
 

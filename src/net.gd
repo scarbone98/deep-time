@@ -17,7 +17,7 @@ signal snapshot(data: PackedFloat32Array)
 signal event(ev: Array)
 signal left
 
-const VERSION := 3
+const VERSION := 4
 const MAX_PLAYERS := 4
 const DEFAULT_URL := "wss://deep-time-coop.fly.dev"
 const CODE_ALPHABET := "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
@@ -349,9 +349,9 @@ func c_loaded() -> void:
 		return
 	room.loaded[id] = true
 	room.session.add_net_player(id, room.members[id])
+	room.session.sync_loot(id)
 	if room.phase == "play":
 		s_event.rpc_id(id, ["go"])
-		room.session.sync_loot(id)
 	elif room.loaded.size() >= room.members.size():
 		_go(room)
 

@@ -5,9 +5,11 @@ extends CharacterBody3D
 
 signal noise(pos: Vector3, radius: float)
 
-const WALK := 3.2
-const RUN := 6.4
-const SNEAK := 1.5
+const WALK := 4.3
+const RUN := 7.6
+const SNEAK := 2.1
+const JUMP := 6.2
+const GRAVITY := 18.0
 
 var world: World
 var sounds: Dictionary
@@ -52,7 +54,15 @@ var last_input_t := 0.0
 var bot := false  # dev: walk in circles
 var bag: Array[int] = []  # loot indices carried
 var carry := 0.0  # their total weight: slower, louder
-const BAG_MAX := 3
+var bag_max := 3
+var battery_life := 300.0
+var vy := 0.0
+var grounded := true
+var net_jump := false
+var jump_queued := false
+var last_jump := false
+var land_dip := 0.0
+var fov_kick := 0.0
 
 
 func setup(w: World, s: Dictionary, is_view := true) -> void:
@@ -111,9 +121,11 @@ func _unhandled_input(e: InputEvent) -> void:
 	if e is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		# Chrome's pointer lock sometimes reports one huge bogus jump: skip those
 		if e.relative.length() < 250.0:
-			look(e.relative * 0.0022)
+			look(e.relative * 0.0022 * Run.sens)
 	if e.is_action_pressed("light"):
 		toggle_light()
+	if e.is_action_pressed("jump"):
+		jump_queued = true
 
 
 func look(d: Vector2) -> void:
@@ -161,6 +173,9 @@ func _tick(dt: float) -> void:
 			inp = net_move.limit_length(1.0)
 			crouching = net_crouch
 			sprint = net_sprint
+			if net_jump:
+				jump_queued = true
+				net_jump = false
 			if net_light != light.visible and (battery > 0.0 or not net_light):
 				light.visible = net_light
 		else:
@@ -174,6 +189,9 @@ func _tick(dt: float) -> void:
 				inp = (inp + touch.move).limit_length(1.0)
 				crouching = crouching or touch.crouch
 				sprint = sprint or touch.run
+				if touch.jump:
+					touch.jump = false
+					jump_queued = true
 		last_move = inp
 		last_sprint = sprint
 	var depth := maxf(0.0, -world.height_at(position.x, position.z))
@@ -186,7 +204,7 @@ func _tick(dt: float) -> void:
 	spd *= lerpf(1.0, 0.55, clampf(depth / 0.9, 0.0, 1.0))
 	spd *= clampf(1.0 - carry * 0.07, 0.6, 1.0)
 	if running:
-		stamina -= dt / 5.5
+		stamina -= dt / 7.0
 	else:
 		stamina += dt / (9.0 if inp.length() > 0.1 else 6.0)
 	stamina = clampf(stamina, 0.0, 1.0)
@@ -196,9 +214,16 @@ func _tick(dt: float) -> void:
 		exhausted = false
 
 	var wish := Basis(Vector3.UP, yaw) * Vector3(inp.x, 0, inp.y)
-	velocity = velocity.lerp(wish * spd, 1.0 - exp(-dt * 9.0))
+	velocity = velocity.lerp(wish * spd, 1.0 - exp(-dt * (14.0 if grounded else 4.0)))
 	velocity.y = 0.0
-	move_and_slide()
+	# move_and_slide steps by the physics delta; scale so a frame of any
+	# length moves exactly its own share
+	var pdt := get_physics_process_delta_time()
+	var keep := velocity
+	if dt > 0.0:
+		velocity = keep * (dt / pdt)
+		move_and_slide()
+		velocity = Vector3(velocity.x, 0.0, velocity.z) * (pdt / dt)
 	if world.hub_radius > 0.0:
 		var flat := Vector2(position.x, position.z).limit_length(world.hub_radius)
 		position.x = flat.x
@@ -206,7 +231,27 @@ func _tick(dt: float) -> void:
 	else:
 		position.x = clampf(position.x, -World.BOUND, World.BOUND)
 		position.z = clampf(position.z, -World.BOUND, World.BOUND)
-	position.y = lerpf(position.y, world.height_at(position.x, position.z), 1.0 - exp(-dt * 18.0))
+	# jumping and landing
+	last_jump = false
+	var ground := world.height_at(position.x, position.z)
+	if jump_queued and grounded and control and not crouching and stamina > 0.08:
+		vy = JUMP * clampf(1.0 - carry * 0.06, 0.7, 1.0)
+		grounded = false
+		last_jump = true
+		stamina = maxf(0.0, stamina - 0.06)
+	jump_queued = false
+	if grounded:
+		position.y = lerpf(position.y, ground, 1.0 - exp(-dt * 22.0))
+	else:
+		vy -= GRAVITY * dt
+		position.y += vy * dt
+		if position.y <= ground:
+			position.y = ground
+			if vy < -3.0:
+				land_dip = clampf(-vy * 0.02, 0.0, 0.18)
+				_step(maxf(0.0, -ground), true)
+			vy = 0.0
+			grounded = true
 
 	var hs := Vector2(velocity.x, velocity.z).length()
 	moving = hs > 0.4
@@ -238,28 +283,30 @@ func _tick(dt: float) -> void:
 
 	# lamp battery
 	if light.visible:
-		battery = maxf(0.0, battery - dt / 300.0)
+		battery = maxf(0.0, battery - dt / battery_life)
 		light.light_energy = 3.2 if battery > 0.12 else (3.2 if randf() > 0.25 else randf() * 0.8)
 		if battery <= 0.0:
 			light.visible = false
 
 	# camera: crouch height, walk bob, handheld drift
 	eye = lerpf(eye, 1.0 if crouching else 1.6, 1.0 - exp(-dt * 8.0))
-	var amp := 0.035 if not running else 0.07
-	head.position.y = eye + absf(sin(bob)) * amp * minf(hs, 1.0)
+	var amp := 0.025 if not running else 0.045
+	land_dip = lerpf(land_dip, 0.0, 1.0 - exp(-dt * 8.0))
+	head.position.y = eye + absf(sin(bob)) * amp * minf(hs, 1.0) * (1.0 if grounded else 0.0) - land_dip
 	rotation.y = yaw
 	head.rotation.x = pitch
 	# portrait phones: hold the horizontal view instead of the vertical one
 	var vs := get_viewport().get_visible_rect().size
+	fov_kick = lerpf(fov_kick, 7.0 if running and hs > 5.0 else 0.0, 1.0 - exp(-dt * 6.0))
 	if vs.y > vs.x:
 		cam.keep_aspect = Camera3D.KEEP_WIDTH
-		cam.fov = 78.0
+		cam.fov = 80.0 + fov_kick
 	else:
 		cam.keep_aspect = Camera3D.KEEP_HEIGHT
-		cam.fov = 72.0
-	cam.rotation.z = sin(bob) * 0.008 + sin(t * 0.7) * 0.006 + sin(t * 1.9) * 0.003
-	cam.rotation.x = sin(t * 0.53) * 0.006 + sin(t * 1.3) * 0.003 * (1.0 + winded * 3.0)
-	cam.rotation.y = sin(t * 0.41) * 0.006
+		cam.fov = 75.0 + fov_kick
+	cam.rotation.z = sin(bob) * 0.004 + sin(t * 0.7) * 0.002
+	cam.rotation.x = sin(t * 0.53) * 0.002 * (1.0 + winded * 3.0)
+	cam.rotation.y = 0.0
 
 
 func _step(depth: float, running: bool) -> void:

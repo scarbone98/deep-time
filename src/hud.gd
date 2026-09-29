@@ -31,6 +31,7 @@ var focus_prog := 0.0
 var flash := 0.0
 var clean := 0.0
 var prompt_label: Label
+var rift_label: Label
 var stage_box: HBoxContainer
 var menu_box: VBoxContainer
 var menu_fields := {}
@@ -87,6 +88,12 @@ func _ready() -> void:
 	spec_label.offset_right = 250
 	spec_label.offset_top = 40
 	shot_label = _label(osd, "", 11, Vector2(20, 40))
+	rift_label = _label(osd, "", 18, Vector2.ZERO)
+	rift_label.set_anchors_preset(Control.PRESET_CENTER_TOP)
+	rift_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	rift_label.offset_left = -150
+	rift_label.offset_right = 150
+	rift_label.offset_top = 14
 	prompt_label = _label(osd, "", 14, Vector2.ZERO)
 	prompt_label.set_anchors_preset(Control.PRESET_CENTER)
 	prompt_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -270,6 +277,19 @@ func spec(who: String, touch: bool) -> void:
 func add_panel(c: Control) -> void:
 	add_child(c)
 	move_child(c, get_child_count() - 2)
+
+
+## The rift's countdown: calm, then amber, then a red pulse.
+func set_rift(left: float) -> void:
+	var s := int(ceil(maxf(left, 0.0)))
+	rift_label.text = "RIFT  %d:%02d" % [s / 60, s % 60]
+	if left > 60.0:
+		rift_label.modulate = Color(0.6, 0.95, 1.0, 0.85)
+	elif left > 20.0:
+		rift_label.modulate = Color(1.0, 0.75, 0.3)
+	else:
+		rift_label.modulate = Color(1.0, 0.25, 0.2, 0.6 + 0.4 * absf(sin(Time.get_ticks_msec() / 150.0)))
+	rift_label.scale = Vector2.ONE * (1.0 if left > 20.0 else 1.15)
 
 
 func prompt(t: String) -> void:

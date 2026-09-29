@@ -36,8 +36,28 @@ const FACES := [
 ]
 
 
+## Things that help. Upgrades have one price per level.
+const GEAR := [
+	{"id": "decoy", "name": "SQUEAKY DECOY", "costs": [35], "about": "throw it (Q): it squeaks and draws the hunter"},
+	{"id": "pack", "name": "BIGGER PACK", "costs": [250, 600], "about": "+1 bag slot per level"},
+	{"id": "battery", "name": "LONG-LIFE BATTERY", "costs": [200], "about": "the lamp lasts twice as long"},
+]
+
+
+## The next price for a gear item, or -1 when it's maxed out.
+static func gear_cost(id: String) -> int:
+	var it := find("gear", id)
+	if it.is_empty():
+		return -1
+	var costs: Array = it.costs
+	if id == "decoy":
+		return int(costs[0])
+	var lvl := int(Run.gear.get(id, 0))
+	return int(costs[lvl]) if lvl < costs.size() else -1
+
+
 static func tab(kind: String) -> Array:
-	return {"suit": SUITS, "hat": HATS, "face": FACES}[kind]
+	return {"suit": SUITS, "hat": HATS, "face": FACES, "gear": GEAR}[kind]
 
 
 static func find(kind: String, id: String) -> Dictionary:
@@ -59,4 +79,9 @@ static func clean_look(look: Variant) -> Dictionary:
 		for k in out:
 			if look.has(k) and not find(k, str(look[k])).is_empty():
 				out[k] = str(look[k])
+		# upgrades ride along with the look
+		if look.has("pack"):
+			out["pack"] = clampi(int(look.pack), 0, 2)
+		if look.has("battery"):
+			out["battery"] = clampi(int(look.battery), 0, 1)
 	return out

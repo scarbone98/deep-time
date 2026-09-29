@@ -10,12 +10,15 @@ signal emote(e: int)
 signal mic
 signal use
 signal drop
+signal decoy
 
 var player: Player
 var coop := false
 var emotes_open := false
 var use_label := ""
 var can_drop := false
+var decoys := 0
+var jump := false
 var move := Vector2.ZERO
 var run := false
 var crouch := false
@@ -38,10 +41,13 @@ func _buttons() -> Dictionary:
 		"lamp": Vector2(s.x - 62, s.y - 190),
 		"crouch": Vector2(s.x - 62, s.y - 110),
 	}
+	b["jump"] = Vector2(s.x - 136, s.y - 42) if coop else Vector2(s.x - 136, s.y - 110)
 	if use_label != "":
 		b["use"] = Vector2(s.x - 62, s.y - 270)
 	if can_drop:
 		b["drop"] = Vector2(s.x - 62, s.y - 350)
+	if decoys > 0:
+		b["decoy"] = Vector2(s.x - 136, s.y - 270)
 	if coop:
 		b["mic"] = Vector2(s.x - 136, s.y - 110)
 		b["emote"] = Vector2(s.x - 136, s.y - 190)
@@ -66,6 +72,10 @@ func _input(e: InputEvent) -> void:
 				player.toggle_light()
 			elif hit == "crouch":
 				crouch = not crouch
+			elif hit == "jump":
+				jump = true
+			elif hit == "decoy":
+				decoy.emit()
 			elif hit == "use":
 				use.emit()
 			elif hit == "drop":
@@ -120,7 +130,10 @@ func _draw() -> void:
 	if b.has("use"):
 		_button(b.use, use_label, true)
 	if b.has("drop"):
-		_button(b.drop, "DROP", false)
+		_button(b.drop, "THROW", false)
+	_button(b.jump, "JUMP", false)
+	if b.has("decoy"):
+		_button(b.decoy, "DECOY %d" % decoys, false)
 	if coop:
 		_button(b.mic, "MIC", not Net.voice.muted)
 		_button(b.emote, "EMOTE", emotes_open)

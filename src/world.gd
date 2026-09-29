@@ -116,22 +116,21 @@ func height_at(x: float, z: float) -> float:
 	return h00 + (h11 - h01) * fx + (h01 - h00) * fz
 
 
+## The rift stays where you land: find a flat, dry spot near the middle,
+## put the door there, and start the player on its carpet facing out.
 func _pick_points() -> void:
-	for tries in 2000:
-		var s := Vector3(rng.randf_range(-125, 125), 0, rng.randf_range(-125, 125))
-		if height_at(s.x, s.z) < 0.25 or _in_rim(s):
-			continue
-		var ang := rng.randf() * TAU
-		var e := s + Vector3(cos(ang), 0, sin(ang)) * rng.randf_range(130.0, 165.0)
-		if absf(e.x) > 128.0 or absf(e.z) > 128.0:
-			continue
-		if height_at(e.x, e.z) < 0.1 and tries < 1500:
-			continue
-		spawn = s
-		exit_pos = e
-		break
-	spawn_yaw = rng.randf() * TAU
-	exit_yaw = atan2(spawn.x - exit_pos.x, spawn.z - exit_pos.z)
+	var best := Vector3.ZERO
+	for tries in 400:
+		var e := Vector3(rng.randf_range(-55, 55), 0, rng.randf_range(-55, 55))
+		var h := height_at(e.x, e.z)
+		if h > 0.3 and h < 4.0:
+			best = e
+			break
+	exit_pos = best
+	exit_yaw = rng.randf() * TAU
+	var front := Vector3(sin(exit_yaw), 0, cos(exit_yaw))
+	spawn = exit_pos + front * 5.0
+	spawn_yaw = exit_yaw + PI
 	# level a pad under the doorway
 	var pad := maxf(height_at(exit_pos.x, exit_pos.z), 0.25)
 	for j in N + 1:
@@ -139,11 +138,11 @@ func _pick_points() -> void:
 			var x := -HALF + i * STEP
 			var z := -HALF + j * STEP
 			var d := Vector2(x - exit_pos.x, z - exit_pos.z).length()
-			if d < 9.0:
-				var k := smoothstep(9.0, 5.0, d)
+			if d < 13.0:
+				var k := smoothstep(13.0, 8.0, d)
 				heights[j * (N + 1) + i] = lerpf(heights[j * (N + 1) + i], pad, k)
-	spawn.y = height_at(spawn.x, spawn.z)
 	exit_pos.y = pad
+	spawn.y = height_at(spawn.x, spawn.z)
 
 
 func _terrain() -> void:
@@ -355,14 +354,15 @@ func _logs() -> void:
 
 
 ## Spread-out spots in the deeper pools, away from the start.
-func pools(count: int) -> Array:
+func pools(count: int, within := 125.0) -> Array:
 	var out := []
 	for depth in [-0.8, -0.65, -0.5]:
 		for tries in 3000:
 			if out.size() >= count:
 				return out
 			var p := Vector3(rng.randf_range(-BOUND + 10, BOUND - 10), 0, rng.randf_range(-BOUND + 10, BOUND - 10))
-			if height_at(p.x, p.z) > depth or Vector2(p.x - spawn.x, p.z - spawn.z).length() < 30.0:
+			var ds := Vector2(p.x - spawn.x, p.z - spawn.z).length()
+			if height_at(p.x, p.z) > depth or ds < 30.0 or ds > within:
 				continue
 			var ok := true
 			for q in out:
@@ -454,8 +454,10 @@ func _flora_permian() -> void:
 		bone_spots.append(Vector3(x, height_at(x, z), z))
 	# burrow colonies
 	for c in 7:
-		var cx := rng.randf_range(-BOUND + 20, BOUND - 20)
-		var cz := rng.randf_range(-BOUND + 20, BOUND - 20)
+		var ca := rng.randf() * TAU
+		var cd := rng.randf_range(40.0, 110.0)
+		var cx := clampf(spawn.x + cos(ca) * cd, -BOUND + 20, BOUND - 20)
+		var cz := clampf(spawn.z + sin(ca) * cd, -BOUND + 20, BOUND - 20)
 		if Vector2(cx - spawn.x, cz - spawn.z).length() < 30.0:
 			continue
 		for k in rng.randi_range(3, 5):
@@ -509,11 +511,15 @@ func ground_collider() -> void:
 
 
 ## A random dry spot, away from the start.
-func dry_point(r: RandomNumberGenerator, min_h := 0.1, away := 25.0) -> Vector3:
+## A random dry spot between `away` and `within` metres of the rift.
+func dry_point(r: RandomNumberGenerator, min_h := 0.1, away := 25.0, within := 115.0) -> Vector3:
 	var p := Vector3.ZERO
 	for tries in 400:
-		p = Vector3(r.randf_range(-BOUND + 10, BOUND - 10), 0, r.randf_range(-BOUND + 10, BOUND - 10))
-		if height_at(p.x, p.z) > min_h and Vector2(p.x - spawn.x, p.z - spawn.z).length() > away and not _near_trunk(p, 1.0):
+		var a := r.randf() * TAU
+		p = exit_pos + Vector3(cos(a), 0, sin(a)) * lerpf(away, within, sqrt(r.randf()))
+		p.x = clampf(p.x, -BOUND + 10, BOUND - 10)
+		p.z = clampf(p.z, -BOUND + 10, BOUND - 10)
+		if height_at(p.x, p.z) > min_h and not _near_trunk(p, 1.0):
 			break
 	p.y = height_at(p.x, p.z)
 	return p

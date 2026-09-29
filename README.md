@@ -8,16 +8,19 @@ Godot 4.5 (GL Compatibility), GDScript. Built for the web, without threads.
 
 ## How it plays
 
-**A time-travelling heist.** You start in the **Chrono Hub**, a little station floating outside time.
+**A time-travelling heist.** You start in the **Chrono Hub**, a little station floating outside time. Walk to the **TIME CONSOLE** and drop into an era.
 
-1. Walk to the **TIME CONSOLE** and drop into an era.
-2. Grab what's valuable: eggs, amber, fossils, teeth. The bag holds 3 things, and the heavier it is, the slower and louder you are.
-3. Get back through the **rift** (the Backrooms fragment) to cash in. Die and your bag spills where you fell, so a friend can pick it up.
-4. Everyone is paid the crew's whole haul. Spend it at the **SHOP** kiosk on cosmetics for your chibi time-traveller: suit colours, hats (party, propeller, cowboy, top hat, dino hood, halo, crown) and face gear.
+- **The rift stays open where you land, for 7 minutes.** Go out, grab eggs, amber, fossils and teeth, then bring them back to the rift's carpet to **bank** them. Go out again.
+  - Press E at the door to go home. Anyone still out when the rift collapses is lost, along with what they carry.
+  - Halfway through, the hunters get bolder. In the last minute the rift strains, flickers and rumbles.
+- **Cheap loot is close, eggs are far.** Eggs sit in nests, and taking one tells the parent exactly where you are. The first egg wakes a second hunter.
+- **The bag** holds 3 (more with upgrades). The heavier it is, the slower and louder you are. Die, and it spills where you fell.
+- **Throw things (G):** to a friend, who catches automatically if it comes at them, or ahead of you. **Eggs crack if they hit the ground**, which halves their value. Look at your feet to set something down gently.
+- **Everyone is paid the crew's banked haul.** At the **SHOP** kiosk, buy:
+  - cosmetics for your chibi time-traveller: suits, hats (party, propeller, cowboy, top hat, dino hood, halo, crown) and face gear
+  - **gear:** squeaky decoys (throw with Q; they squeak and pull the hunter away), a bigger pack (+1 slot per level) and a long-life battery
 
-**Eggs sit in nests**, and they're worth the most. Taking one tells its parent exactly where you are. The first egg taken wakes a second hunter, and every egg darkens the era.
-
-Money, owned cosmetics, your look and best hauls are saved on the device (`user://deeptime.cfg`, IndexedDB on the web). Level data (look, sound, loot tables) is in `src/eras.gd`; the shop catalogue is in `src/shop.gd`.
+Loot glints through the fog so you can find it. Money, cosmetics, gear, look sensitivity and best hauls are saved on the device (`user://deeptime.cfg`, IndexedDB on the web). Level data is in `src/eras.gd`; the shop catalogue is in `src/shop.gd`.
 
 ### Level 1: The Coal Forest (Carboniferous)
 
@@ -61,9 +64,9 @@ The web build connects to `wss://deep-time-coop.fly.dev` by default. Override it
 
 ## Controls
 
-Desktop: WASD move · mouse look · Shift run · C / Ctrl crouch · F lamp · E grab / use · G drop · Esc pause · co-op: 1-4 emotes, M mute
+Desktop: WASD move · mouse look · Shift run · Space jump · C / Ctrl crouch · F lamp · E grab / use · G throw · Q decoy · [ ] look sensitivity · Esc pause · co-op: 1-4 emotes, M mute
 
-Phone (portrait or landscape): left thumb is a floating stick (drag past the ring to run) · right thumb looks · LAMP, CROUCH, GRAB / USE and DROP buttons. Touch mode turns on automatically on touchscreens; force it with `?touch`.
+Phone (portrait or landscape): left thumb is a floating stick (drag past the ring to run) · right thumb looks · LAMP, CROUCH, JUMP, GRAB / USE, THROW and DECOY buttons. Touch mode turns on automatically on touchscreens; force it with `?touch`.
 
 ## Dev
 
@@ -73,7 +76,7 @@ Phone (portrait or landscape): left thumb is a floating stick (drag past the rin
 ```
 
 Dev flags are a URL query on web, or `-- key=value` on desktop:
-`play` (skip title), `level=N` (0 is the hub), `seed=N`, `mill=D` + `mturn=rad` (spawn it D m ahead), `exit` (start by the rift), `loot=N` (start by loot #N), `give=N,N` (start carrying them), `money=N`, `shop` / `console` (open that panel), `light`, `fly`, `freeze`, `yaw=` / `pitch=` (degrees), `die`, `touch`, `debug`, `near=eryops|scorp|scuto|dicy` + `neard=m`, `attract` + `ts=` (cabinet video scene; see tools/record_attract.mjs). Co-op: `autostart=LEVEL,PLAYERS`, `bot`, `emote=N`. Flags only apply to the first load.
+`play` (skip title), `level=N` (0 is the hub), `seed=N`, `mill=D` + `mturn=rad` (spawn it D m ahead), `exit` (start by the rift), `loot=N` (start by loot #N), `give=N,N` (start carrying them), `money=N`, `shop` / `console` (open that panel), `light`, `fly`, `freeze`, `yaw=` / `pitch=` (degrees), `die`, `touch`, `debug`, `near=eryops|scorp|scuto|dicy` + `neard=m`, `attract` + `ts=` (cabinet video scene; see tools/record_attract.mjs). `rift=S` (S seconds left on the rift). Co-op: `autostart=LEVEL,PLAYERS`, `bot`, `emote=N`, `throwat=S`; server: `give` (everyone starts holding two things), `debug` (log events). Flags only apply to the first load.
 
 Screenshots: serve `build/web` on :8792, then run `node tools/shot.mjs "?play&seed=42" out.png 12000`. Playwright must be resolvable.
 

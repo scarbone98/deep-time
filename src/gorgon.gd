@@ -145,7 +145,7 @@ const STATES := ["prowl", "stalk", "charge", "search"]
 
 
 func net_get(out: PackedFloat32Array) -> void:
-	out.append_array([position.x, position.y, position.z, dir.x, dir.z, speed, STATES.find(state)])
+	out.append_array([position.x, position.y, position.z, dir.x, dir.z, speed, STATES.find(state) if feeding <= 0.0 else 4])
 
 
 func net_set(a: PackedFloat32Array, i: int) -> int:
@@ -154,7 +154,11 @@ func net_set(a: PackedFloat32Array, i: int) -> int:
 	if d.length() > 0.01:
 		dir = d.normalized()
 	speed = a[i + 5]
-	var st: String = STATES[clampi(int(a[i + 6]), 0, 3)]
+	var si := int(a[i + 6])
+	if si == 4 and feeding <= 0.0:
+		_bite()
+	feeding = 1.0 if si == 4 else 0.0
+	var st: String = STATES[clampi(si, 0, 3)] if si < 4 else state
 	if st != state:
 		if st == "stalk":
 			growl.play()
@@ -280,6 +284,11 @@ func _look(dt: float) -> void:
 		lost += dt
 
 
+## The kill (on the server) or the lunge (as everyone sees it).
+func _bite() -> void:
+	pass
+
+
 ## Whether it can pick this player out at all (the T. rex only sees movement).
 func _notices(_p: Player) -> bool:
 	return true
@@ -290,6 +299,7 @@ func _think(dt: float) -> void:
 	var d := Vector2(pp.x - position.x, pp.z - position.z).length()
 	if player.alive and d < catch_range and not hear_off:
 		caught.emit(player)
+		_bite()
 		feeding = 3.5
 		_pick_prowl()
 		return

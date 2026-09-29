@@ -4,8 +4,7 @@ extends Gorgon
 ## slower than a crouch-walk) and it looks right through you. You feel its
 ## footsteps long before you see it.
 
-var legs2: Array[Node3D] = []
-var body_node: Node3D
+var model: DinoModel
 
 
 func _tune() -> void:
@@ -34,30 +33,17 @@ func _voice() -> void:
 
 
 func _build_body() -> void:
-	var m := Meshes.rex()
 	rig.position.y = 0.0
-	body_node = Node3D.new()
-	rig.add_child(body_node)
-	for part in [m.body, m.eyes]:
-		var mi := MeshInstance3D.new()
-		mi.mesh = part
-		body_node.add_child(mi)
-	jaw = Node3D.new()
-	jaw.position = m.jaw_at
-	body_node.add_child(jaw)
-	var jm := MeshInstance3D.new()
-	jm.mesh = m.jaw
-	jaw.add_child(jm)
-	for sd in [-1.0, 1.0]:
-		var pv := Node3D.new()
-		pv.position = Vector3(0.95 * sd, m.hip * 0.95, 0.6)
-		rig.add_child(pv)
-		var lm := MeshInstance3D.new()
-		lm.mesh = m.leg
-		pv.add_child(lm)
-		legs2.append(pv)
-	head_off = m.head_at
-	eye_off = m.head_at + Vector3(0, 0.3, 0.8)
+	model = DinoModel.new()
+	rig.add_child(model)
+	model.setup("TRex", 0.42)
+	head_off = Vector3(0, 5.0, -4.0)
+	eye_off = Vector3(0, 5.3, -3.6)
+
+
+func _bite() -> void:
+	if model:
+		model.attack()
 
 
 ## Stand still and it can't see you.
@@ -73,16 +59,12 @@ func _footfall(prev: float) -> void:
 
 func _pose() -> void:
 	rotation.y = atan2(-dir.x, -dir.z)
-	var amp := clampf(speed / 2.5, 0.0, 1.0)
-	for k in legs2.size():
-		var ph := gait + (0.0 if k == 0 else PI)
-		legs2[k].rotation.x = sin(ph) * 0.45 * amp
-	body_node.position.y = absf(sin(gait)) * 0.18 * amp
-	body_node.rotation.z = sin(gait) * 0.03 * amp
-	body_node.rotation.y = sin(t * 0.6) * 0.04
-	if jaw:
-		var open := 0.55 if state == "charge" else (0.2 if state == "search" else 0.06)
-		jaw.rotation.x = lerpf(jaw.rotation.x, open, 0.1)
+	if model == null:
+		return
+	if feeding > 0.0:
+		model.play("Idle", 1.0)
+		return
+	model.move(speed, 2.0, 6.5)
 
 
 ## Everyone near it feels each step.

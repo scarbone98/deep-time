@@ -20,6 +20,7 @@ static func _make() -> Dictionary:
 		"skitter": skitter(),
 		"wings": wings(),
 		"step": step(),
+		"steps": [step(0), step(1), step(2), step(3)],
 		"splash": splash(),
 		"heart": heart(),
 		"breath": breath(),
@@ -122,16 +123,24 @@ static func wings() -> AudioStreamWAV:
 	return _loop(s, fade)
 
 
-static func step() -> AudioStreamWAV:
+## A soft footfall on earth and leaf litter: a muffled thud with a little
+## scuff on top, nothing sharp. `v` picks one of a few so they don't repeat.
+static func step(v := 0) -> AudioStreamWAV:
 	var r := RandomNumberGenerator.new()
-	var s := _buf(0.16)
+	r.seed = 40 + v
+	var s := _buf(0.14)
 	var lp := 0.0
+	var lp2 := 0.0
+	var f := 55.0 + v * 7.0
 	for i in s.size():
 		var t := float(i) / RATE
-		lp += (r.randf_range(-1.0, 1.0) - lp) * 0.35
-		s[i] = lp * exp(-t * 28.0) * 0.9 + sin(TAU * 70.0 * t) * exp(-t * 40.0) * 0.4
+		lp += (r.randf_range(-1.0, 1.0) - lp) * 0.06
+		lp2 += (lp - lp2) * 0.25
+		var env := minf(t / 0.006, 1.0) * exp(-t * 32.0)
+		var scuff := lp2 * 6.0 * exp(-t * 45.0)
+		var thud := sin(TAU * f * t) * exp(-t * 38.0) * 0.5
+		s[i] = (scuff + thud) * env * 0.5
 	return _wav(s)
-
 
 static func splash() -> AudioStreamWAV:
 	var r := RandomNumberGenerator.new()
@@ -142,7 +151,7 @@ static func splash() -> AudioStreamWAV:
 		var w := r.randf_range(-1.0, 1.0)
 		lp += (w - lp) * 0.08
 		var env := minf(t / 0.03, 1.0) * exp(-t * 7.0)
-		s[i] = (w - lp) * env * 0.5 + sin(TAU * (500.0 + 300.0 * sin(t * 40.0)) * t) * exp(-t * 14.0) * 0.12
+		s[i] = lp * env * 0.9 + sin(TAU * (300.0 + 150.0 * sin(t * 40.0)) * t) * exp(-t * 14.0) * 0.06
 	return _wav(s)
 
 

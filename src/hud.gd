@@ -36,6 +36,10 @@ var hotbar: Control
 var slot_names: Array = []
 var slot_held := 0
 var slot_two := false
+var stamina := 1.0
+var winded := false
+var stam_show := 0.0
+var stam_bar: Control
 var stage_box: HBoxContainer
 var menu_box: VBoxContainer
 var menu_fields := {}
@@ -92,6 +96,11 @@ func _ready() -> void:
 	spec_label.offset_right = 250
 	spec_label.offset_top = 40
 	shot_label = _label(osd, "", 11, Vector2(20, 40))
+	stam_bar = Control.new()
+	stam_bar.set_anchors_preset(Control.PRESET_FULL_RECT)
+	stam_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	stam_bar.draw.connect(_draw_stamina)
+	osd.add_child(stam_bar)
 	hotbar = Control.new()
 	hotbar.set_anchors_preset(Control.PRESET_FULL_RECT)
 	hotbar.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -288,6 +297,18 @@ func add_panel(c: Control) -> void:
 	move_child(c, get_child_count() - 2)
 
 
+## A plain bar above the timecode. It fades out when you're rested.
+func _draw_stamina() -> void:
+	if stam_show <= 0.01:
+		return
+	var vs := stam_bar.get_rect().size
+	var r := Rect2(20, vs.y - 60, 130, 6)
+	var a := stam_show
+	stam_bar.draw_rect(r.grow(1.0), Color(0, 0, 0, 0.5 * a))
+	var col := Color(0.95, 0.4, 0.3, a) if winded else Color(0.95, 0.9, 0.75, 0.9 * a)
+	stam_bar.draw_rect(Rect2(r.position, Vector2(r.size.x * clampf(stamina, 0.0, 1.0), r.size.y)), col)
+
+
 func set_slots(names: Array, held: int, two: bool) -> void:
 	slot_names = names
 	slot_held = held
@@ -434,6 +455,8 @@ func _process(dt: float) -> void:
 			tip_time = 0.0
 			tip.text = ""
 	flash = maxf(0.0, flash - dt)
+	stam_show = move_toward(stam_show, 1.0 if stamina < 0.99 else 0.0, dt * 3.0)
+	stam_bar.queue_redraw()
 	focus.queue_redraw()
 	mat.set_shader_parameter("glitch", glitch)
 	mat.set_shader_parameter("dark", dark)

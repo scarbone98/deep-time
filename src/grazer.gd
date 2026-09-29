@@ -15,6 +15,7 @@ var active := false
 var rig: Node3D
 var head_bob := 0.0
 var legs: Array[Node3D] = []
+var model: DinoModel
 var call_: AudioStreamPlayer3D
 var next_call := 0.0
 var rng := RandomNumberGenerator.new()
@@ -34,6 +35,14 @@ func setup(w: World, h: Dictionary, s: Dictionary, meshes: Dictionary) -> void:
 	rig = Node3D.new()
 	rig.position.y = 0.5
 	add_child(rig)
+	if meshes.has("model"):
+		scale = Vector3.ONE * rng.randf_range(0.9, 1.1)
+		rig.position.y = 0.0
+		model = DinoModel.new()
+		rig.add_child(model)
+		model.setup(meshes.model, meshes.size)
+		_add_call(s)
+		return
 	var body := MeshInstance3D.new()
 	body.mesh = meshes.body
 	rig.add_child(body)
@@ -46,6 +55,10 @@ func setup(w: World, h: Dictionary, s: Dictionary, meshes: Dictionary) -> void:
 		lm.scale = Vector3(signf(hip[0]), 1, 1)
 		pv.add_child(lm)
 		legs.append(pv)
+	_add_call(s)
+
+
+func _add_call(s: Dictionary) -> void:
 	call_ = AudioStreamPlayer3D.new()
 	call_.stream = s.croak
 	call_.unit_size = 12.0
@@ -84,6 +97,8 @@ func _physics_process(dt: float) -> void:
 		gait += speed * dt * 3.0
 		for k in legs.size():
 			legs[k].rotation.x = sin(gait + (0.0 if k in [0, 3] else PI)) * 0.35 * clampf(speed, 0.0, 1.0)
+		if model:
+			model.move(speed, 1.0, 5.0)
 		next_call -= dt
 		if next_call <= 0.0:
 			next_call = rng.randf_range(12.0, 30.0)
@@ -109,9 +124,12 @@ func _physics_process(dt: float) -> void:
 	gait += speed * dt * 3.0
 	for k in legs.size():
 		legs[k].rotation.x = sin(gait + (0.0 if k in [0, 3] else PI)) * 0.35 * clampf(speed, 0.0, 1.0)
+	if model:
+		model.move(speed, 1.0, 5.0)
 	# head down to graze when standing
 	head_bob = lerpf(head_bob, 0.12 if speed < 0.2 else 0.0, dt)
-	rig.rotation.x = head_bob + sin(t * 0.9) * 0.02
+	if model == null:
+		rig.rotation.x = head_bob + sin(t * 0.9) * 0.02
 	next_call -= dt
 	if next_call <= 0.0:
 		next_call = rng.randf_range(12.0, 30.0)

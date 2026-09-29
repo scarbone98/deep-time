@@ -379,9 +379,11 @@ func _step(depth: float, running: bool) -> void:
 	noise.emit(global_position, r)
 	if not view:
 		return
-	step_sfx.stream = sounds.splash if wet else sounds.step
-	step_sfx.pitch_scale = randf_range(0.85, 1.15)
-	step_sfx.volume_db = -16.0 if crouching else (-2.0 if running else -8.0)
+	step_sfx.stream = sounds.splash if wet else sounds.steps[randi() % sounds.steps.size()]
+	step_sfx.pitch_scale = randf_range(0.9, 1.1)
+	step_sfx.volume_db = -26.0 if crouching else (-14.0 if running else -19.0)
+	if wet:
+		step_sfx.volume_db -= 4.0
 	step_sfx.play()
 
 

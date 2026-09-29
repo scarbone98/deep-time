@@ -143,6 +143,7 @@ func _ready() -> void:
 	Net.status.connect(func(t: String) -> void: hud.status(t))
 	Net.left.connect(_on_left)
 	print("seed ", seed_)
+	DinoModel.no_recolour = flags.has("norecolour")
 	era = Eras.get_era(level)
 	hub = level == 0
 	sounds = Synth.all()
@@ -408,7 +409,7 @@ func _populate_cretaceous(rng: RandomNumberGenerator, lair: Vector3) -> void:
 	# the rex, further out
 	var rx := _creature_start(rng, 85.0, 120.0)
 	_spawn_hunter(rx, (world.spawn - rx).normalized(), "rex")
-	var tm := Meshes.triceratops()
+	var tm := {"model": "Triceratops", "size": 0.3}
 	for h in 2:
 		var c := _creature_start(rng, 40.0, 90.0)
 		var herd := {"center": c}
@@ -586,6 +587,7 @@ func _parse_flags() -> Dictionary:
 
 
 func _apply_dev_flags() -> void:
+	DinoModel.probe = flags.has("probe")
 	if flags.has("yaw"):
 		local.yaw = deg_to_rad(float(flags.yaw))
 	if flags.has("pitch"):
@@ -2047,7 +2049,8 @@ func _play_tick(dt: float) -> void:
 		if m is TRex:
 			local.shake = maxf(local.shake, m.quake_at(local.position))
 	hud.glitch = lerpf(hud.glitch, near * near * 0.4, 1.0 - exp(-dt * 4.0))
-	hud.dark = lerpf(hud.dark, 1.0 - local.stamina, 1.0 - exp(-dt * 3.0))
+	hud.stamina = local.stamina
+	hud.winded = local.exhausted
 	local.fear = lerpf(local.fear, maxf(near, hunted * 0.7), 1.0 - exp(-dt * 1.5))
 	# the frogs go quiet when it's close
 	amb.volume_db = lerpf(amb.volume_db, lerpf(era.loops[0][1], -30.0, local.fear), 1.0 - exp(-dt * 1.2))

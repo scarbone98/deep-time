@@ -12,3 +12,7 @@ All recordings are CC0 (public domain), from Freesound. Each was downmixed to mo
 Everything else is synthesized in `src/synth.gd`.
 
 Checked by spectrogram: neither recording has birdsong. There were no birds in the Carboniferous or the Permian. The Cretaceous had them, so its track may.
+
+## Models
+
+Dinosaur models are by Quaternius, public domain (CC0), from the Ultimate Animated Dinosaur pack via poly.pizza: Velociraptor, T-Rex, Triceratops (`assets/dinos/`). They were recoloured in code, with glowing eyes added.

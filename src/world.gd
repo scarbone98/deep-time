@@ -21,6 +21,15 @@ var lite := false  # phones: shorter draw distances
 var log_spots: Array = []  # [position, yaw] per fallen log
 var burrows: Array = []  # Permian burrow mouths
 var era := "carboniferous"
+## The ground shader's colours per era.
+const GROUND := {
+	"carboniferous": {"soil": Vector3(0.12, 0.1, 0.06), "patch_col": Vector3(0.09, 0.14, 0.05), "litter": Vector3(0.19, 0.14, 0.07),
+		"wet": Vector3(0.04, 0.045, 0.03), "rock": Vector3(0.18, 0.18, 0.16), "wet_line": 0.35},
+	"permian": {"soil": Vector3(0.5, 0.26, 0.14), "patch_col": Vector3(0.6, 0.4, 0.22), "litter": Vector3(0.38, 0.3, 0.17),
+		"wet": Vector3(0.3, 0.18, 0.13), "rock": Vector3(0.42, 0.2, 0.12), "wet_line": 1.6},
+	"cretaceous": {"soil": Vector3(0.16, 0.13, 0.08), "patch_col": Vector3(0.14, 0.2, 0.07), "litter": Vector3(0.26, 0.16, 0.08),
+		"wet": Vector3(0.07, 0.065, 0.045), "rock": Vector3(0.26, 0.24, 0.2), "wet_line": 0.35},
+}
 var bone_spots: Array = []
 var hub_radius := 0.0  # the hub: walkable disc instead of a square
 var spots := {}  # hub: named interaction points
@@ -184,12 +193,14 @@ func _terrain() -> void:
 			var b := a + 1
 			var c := a + N + 2
 			var d := a + N + 1
-			st.add_index(a); st.add_index(c); st.add_index(b)
-			st.add_index(a); st.add_index(d); st.add_index(c)
+			st.add_index(a); st.add_index(b); st.add_index(c)
+			st.add_index(a); st.add_index(c); st.add_index(d)
 	st.generate_normals()
-	var m := StandardMaterial3D.new()
-	m.vertex_color_use_as_albedo = true
-	m.roughness = 1.0
+	var m := ShaderMaterial.new()
+	m.shader = load("res://src/ground.gdshader")
+	var g: Dictionary = GROUND.get(era, GROUND.carboniferous)
+	for k in g:
+		m.set_shader_parameter(k, g[k])
 	st.set_material(m)
 	var mi := MeshInstance3D.new()
 	mi.mesh = st.commit()

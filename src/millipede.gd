@@ -30,6 +30,7 @@ var gait := 0.0
 var active := false
 var drift := 0.45  # how often roaming heads your way
 var hunt_speed := 5.2
+var hear_off := false  # attract mode: it just passes by
 var skitter: AudioStreamPlayer3D
 var hiss: AudioStreamPlayer3D
 var rng := RandomNumberGenerator.new()
@@ -174,7 +175,7 @@ func _dist2(a: Vector3, b: Vector3) -> float:
 func _think(dt: float) -> void:
 	var pp := player.global_position
 	var d := _dist2(pp, pos[0])
-	if player.alive:
+	if player.alive and not hear_off:
 		var feel := 3.2 if player.moving else 1.7
 		if d < feel:
 			_hunt(pp)
@@ -191,7 +192,7 @@ func _think(dt: float) -> void:
 			if arrive or timer <= 0.0:
 				_pick_roam()
 		"investigate":
-			want_speed = 2.7
+			want_speed = 1.6 if hear_off else 2.7
 			wiggle = 0.25
 			if arrive:
 				_search(target)
@@ -243,7 +244,7 @@ func _pick_roam() -> void:
 
 
 func hear(at: Vector3, radius: float) -> void:
-	if not active:
+	if not active or hear_off:
 		return
 	var d := _dist2(at, pos[0])
 	if d > radius:

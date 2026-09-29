@@ -310,8 +310,33 @@ func _start() -> void:
 			sc.begin()
 	if not flags.has("play") and not touch:
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	if flags.has("attract"):
+		_attract()
+		# recording is slow: the capture script sets ts so a frame is 1/30 s
+		Engine.time_scale = float(flags.get("ts", "1"))
+		return
 	hud.say([["", 1.5], ["fill the shot list.  keep them in frame.", 4.5], ["it can't see you.  it feels you move.", 4.5],
 		["the lamp helps.  the flies like it too." if touch else "SHIFT run   C crouch   F lamp", 5.0]])
+
+
+## Cabinet video: lamp on, a slow look around while it crosses in front.
+func _attract() -> void:
+	player.control = false
+	player.light.visible = true
+	var fwd := Basis(Vector3.UP, player.yaw) * Vector3.FORWARD
+	var right := Basis(Vector3.UP, player.yaw) * Vector3.RIGHT
+	mill.pos[0] = player.position + fwd * 7.0 + right * 6.0
+	for i in mill.pos.size():
+		mill.pos[i] = mill.pos[0] + right * Millipede.SP * i
+	mill.dir = -right
+	mill.state = "investigate"
+	mill.target = player.position + fwd * 5.0 - right * 20.0
+	mill.hear_off = true
+	for k in flies.size():
+		flies[k].position = player.position + fwd * (4.0 + k) + Vector3(randf_range(-3, 3), 2.0, 0)
+	var tw := create_tween()
+	tw.tween_property(player, "pitch", -0.18, 4.0)
+	tw.parallel().tween_property(player, "yaw", player.yaw + 0.5, 15.0)
 
 
 func _on_noise(at: Vector3, radius: float) -> void:
@@ -415,7 +440,8 @@ func _play_tick(dt: float) -> void:
 	player.fear = lerpf(player.fear, maxf(near, hunted * 0.7), 1.0 - exp(-dt * 1.5))
 	# the frogs go quiet when it's close
 	amb.volume_db = lerpf(amb.volume_db, lerpf(-6.0, -30.0, player.fear), 1.0 - exp(-dt * 1.2))
-	_film(dt)
+	if not flags.has("attract"):
+		_film(dt)
 	if exit_node.on and exit_node.inside():
 		_win()
 	elif not exit_node.on and exit_node.near_door():
@@ -428,6 +454,9 @@ func _play_tick(dt: float) -> void:
 	if next_event <= 0.0:
 		next_event = randf_range(25.0, 60.0)
 		_distant_event()
+	if flags.has("attract"):
+		player.rotation.y = player.yaw
+		player.head.rotation.x = player.pitch
 	if not flags.has("play") and not touch and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
 		get_tree().paused = true
 		hud.paused_label.visible = true

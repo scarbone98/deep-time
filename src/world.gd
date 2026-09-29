@@ -21,6 +21,10 @@ var lite := false  # phones: shorter draw distances
 var log_spots: Array = []  # [position, yaw] per fallen log
 var burrows: Array = []  # Permian burrow mouths
 var era := "carboniferous"
+var bone_spots: Array = []
+var hub_radius := 0.0  # the hub: walkable disc instead of a square
+var spots := {}  # hub: named interaction points
+var ring: Node3D
 
 
 func generate(seed_: int, era_id: String) -> void:
@@ -28,6 +32,9 @@ func generate(seed_: int, era_id: String) -> void:
 	rng.seed = seed_
 	_colliders = StaticBody3D.new()
 	add_child(_colliders)
+	if era == "hub":
+		_hub()
+		return
 	if era == "permian":
 		_heights_permian(seed_)
 		_pick_points()
@@ -444,6 +451,7 @@ func _flora_permian() -> void:
 		var x := rng.randf_range(-BOUND + 10, BOUND - 10)
 		var z := rng.randf_range(-BOUND + 10, BOUND - 10)
 		put.call("bones", bones, x, z, height_at(x, z) - 0.1, rng.randf_range(0.8, 1.6))
+		bone_spots.append(Vector3(x, height_at(x, z), z))
 	# burrow colonies
 	for c in 7:
 		var cx := rng.randf_range(-BOUND + 20, BOUND - 20)
@@ -498,3 +506,163 @@ func ground_collider() -> void:
 	cs.scale = Vector3(STEP, 1.0, STEP)
 	body.add_child(cs)
 	add_child(body)
+
+
+## A random dry spot, away from the start.
+func dry_point(r: RandomNumberGenerator, min_h := 0.1, away := 25.0) -> Vector3:
+	var p := Vector3.ZERO
+	for tries in 400:
+		p = Vector3(r.randf_range(-BOUND + 10, BOUND - 10), 0, r.randf_range(-BOUND + 10, BOUND - 10))
+		if height_at(p.x, p.z) > min_h and Vector2(p.x - spawn.x, p.z - spawn.z).length() > away and not _near_trunk(p, 1.0):
+			break
+	p.y = height_at(p.x, p.z)
+	return p
+
+
+func _near_trunk(p: Vector3, pad: float) -> bool:
+	for tr in trunks_near(p.x, p.z, 6.0):
+		if Vector2(p.x - tr.x, p.z - tr.y).length() < float(tr.z) + pad:
+			return true
+	return false
+
+
+## The shore nearest a point, walking outwards until it's dry.
+func shore_near(p: Vector3, r: RandomNumberGenerator) -> Vector3:
+	var a := r.randf() * TAU
+	for k in 60:
+		var q := p + Vector3(cos(a), 0, sin(a)) * (1.0 + k * 0.5)
+		if height_at(q.x, q.z) > 0.05:
+			q.y = height_at(q.x, q.z)
+			return q
+	return dry_point(r)
+
+
+# ---------------------------------------------------------------- the Chrono Hub
+
+func _hub() -> void:
+	hub_radius = 15.0
+	heights.resize((N + 1) * (N + 1))
+	heights.fill(0.0)
+	spawn = Vector3(0, 0, 6)
+	spawn_yaw = 0.0
+	exit_pos = Vector3(0, -100, 0)
+	var deck := MeshInstance3D.new()
+	deck.mesh = Meshes.hub_deck(16.0)
+	add_child(deck)
+	var lines := MeshInstance3D.new()
+	lines.mesh = Meshes.hub_lines(16.0)
+	add_child(lines)
+	# the time ring, and the swirl inside it
+	ring = Node3D.new()
+	ring.position = Vector3(0, 5.2, -11)
+	add_child(ring)
+	var rm := MeshInstance3D.new()
+	rm.mesh = Meshes.time_ring(4.6, 0.32)
+	ring.add_child(rm)
+	var swirl := MeshInstance3D.new()
+	var qm := QuadMesh.new()
+	qm.size = Vector2(9.0, 9.0)
+	var sh := Shader.new()
+	sh.code = """shader_type spatial;
+render_mode unshaded, cull_disabled, blend_add;
+void fragment() {
+	vec2 p = UV - 0.5;
+	float r = length(p);
+	float a = atan(p.y, p.x);
+	float s = sin(a * 5.0 + r * 22.0 - TIME * 2.5) * 0.5 + 0.5;
+	float m = smoothstep(0.5, 0.2, r);
+	ALBEDO = mix(vec3(0.2, 0.5, 1.0), vec3(0.9, 0.5, 1.0), s) * m;
+	ALPHA = m * (0.55 + 0.3 * s);
+}"""
+	var sm := ShaderMaterial.new()
+	sm.shader = sh
+	qm.material = sm
+	swirl.mesh = qm
+	ring.add_child(swirl)
+	var console := MeshInstance3D.new()
+	console.mesh = Meshes.console_mesh()
+	console.position = Vector3(0, 0, -5.0)
+	add_child(console)
+	spots["console"] = console.position
+	var kiosk := MeshInstance3D.new()
+	kiosk.mesh = Meshes.kiosk_mesh()
+	kiosk.position = Vector3(9.0, 0, 2.0)
+	kiosk.rotation.y = deg_to_rad(-70)
+	add_child(kiosk)
+	spots["shop"] = kiosk.position
+	var hat := MeshInstance3D.new()
+	hat.mesh = Meshes.hat("tophat")
+	hat.position = kiosk.position + Vector3(0, 1.4, 0)
+	hat.name = "ShopHat"
+	add_child(hat)
+	# signs
+	for info in [["TIME CONSOLE", console.position + Vector3(0, 2.0, 0)], ["SHOP", kiosk.position + Vector3(0, 3.0, 0)]]:
+		var l := Label3D.new()
+		l.text = info[0]
+		l.font_size = 64
+		l.pixel_size = 0.006
+		l.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+		l.modulate = Color(0.6, 1.0, 1.0)
+		l.outline_size = 12
+		l.position = info[1]
+		add_child(l)
+	var lamp := OmniLight3D.new()
+	lamp.position = Vector3(0, 4, -9)
+	lamp.omni_range = 16.0
+	lamp.light_energy = 1.4
+	lamp.light_color = Color(0.6, 0.7, 1.0)
+	add_child(lamp)
+	var lamp2 := OmniLight3D.new()
+	lamp2.position = kiosk.position + Vector3(0, 3, 0)
+	lamp2.omni_range = 8.0
+	lamp2.light_energy = 1.2
+	lamp2.light_color = Color(1.0, 0.75, 0.85)
+	add_child(lamp2)
+	# stars, far out, untouched by fog
+	var stars := MultiMesh.new()
+	stars.transform_format = MultiMesh.TRANSFORM_3D
+	var sq := QuadMesh.new()
+	sq.size = Vector2(0.8, 0.8)
+	var smat := StandardMaterial3D.new()
+	smat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	smat.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
+	smat.disable_fog = true
+	smat.albedo_color = Color(0.9, 0.9, 1.0)
+	sq.material = smat
+	stars.mesh = sq
+	stars.instance_count = 500
+	for k in 500:
+		var d := Vector3(rng.randf_range(-1, 1), rng.randf_range(-0.6, 1), rng.randf_range(-1, 1)).normalized()
+		stars.set_instance_transform(k, Transform3D(Basis().scaled(Vector3.ONE * rng.randf_range(0.5, 1.6)), d * 110.0))
+	var smi := MultiMeshInstance3D.new()
+	smi.multimesh = stars
+	add_child(smi)
+	# drifting clock-rings in the sky
+	for k in 5:
+		var g := MeshInstance3D.new()
+		g.mesh = Meshes.time_ring(rng.randf_range(3.0, 8.0), 0.15)
+		g.position = Vector3(rng.randf_range(-50, 50), rng.randf_range(10, 35), rng.randf_range(-60, -20))
+		g.rotation = Vector3(rng.randf() * TAU, rng.randf() * TAU, 0)
+		g.name = "Drift%d" % k
+		add_child(g)
+	# the console and kiosk are solid
+	for p in [console.position, kiosk.position]:
+		var cs := CollisionShape3D.new()
+		var cy := CylinderShape3D.new()
+		cy.radius = 0.8 if p == console.position else 1.3
+		cy.height = 3.0
+		cs.shape = cy
+		cs.position = p + Vector3(0, 1.5, 0)
+		_colliders.add_child(cs)
+
+
+func _process(dt: float) -> void:
+	if ring:
+		ring.rotation.z += dt * 0.15
+		for c in get_children():
+			if c.name.begins_with("Drift"):
+				c.rotation.x += dt * 0.05
+				c.rotation.y += dt * 0.03
+			elif c.name == "ShopHat":
+				c.rotation.y += dt * 1.2
+				c.position.y = 1.4 + sin(Time.get_ticks_msec() / 500.0) * 0.08

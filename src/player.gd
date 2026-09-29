@@ -49,6 +49,9 @@ var through := false
 var last_move := Vector2.ZERO
 var last_sprint := false
 var bot := false  # dev: walk in circles
+var bag: Array[int] = []  # loot indices carried
+var carry := 0.0  # their total weight: slower, louder
+const BAG_MAX := 3
 
 
 func setup(w: World, s: Dictionary, is_view := true) -> void:
@@ -157,6 +160,7 @@ func _physics_process(dt: float) -> void:
 	elif running:
 		spd = RUN
 	spd *= lerpf(1.0, 0.55, clampf(depth / 0.9, 0.0, 1.0))
+	spd *= clampf(1.0 - carry * 0.07, 0.6, 1.0)
 	if running:
 		stamina -= dt / 5.5
 	else:
@@ -171,8 +175,13 @@ func _physics_process(dt: float) -> void:
 	velocity = velocity.lerp(wish * spd, 1.0 - exp(-dt * 9.0))
 	velocity.y = 0.0
 	move_and_slide()
-	position.x = clampf(position.x, -World.BOUND, World.BOUND)
-	position.z = clampf(position.z, -World.BOUND, World.BOUND)
+	if world.hub_radius > 0.0:
+		var flat := Vector2(position.x, position.z).limit_length(world.hub_radius)
+		position.x = flat.x
+		position.z = flat.y
+	else:
+		position.x = clampf(position.x, -World.BOUND, World.BOUND)
+		position.z = clampf(position.z, -World.BOUND, World.BOUND)
 	position.y = lerpf(position.y, world.height_at(position.x, position.z), 1.0 - exp(-dt * 18.0))
 
 	var hs := Vector2(velocity.x, velocity.z).length()
@@ -238,6 +247,7 @@ func _step(depth: float, running: bool) -> void:
 	var wet := depth > 0.05
 	if wet:
 		r *= 1.5
+	r *= 1.0 + carry * 0.12
 	noise.emit(global_position, r)
 	if not view:
 		return

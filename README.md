@@ -1,58 +1,49 @@
 # DEEP TIME
 
-Backrooms through prehistory. You're holding a camcorder and noclipping down through Earth's layers. Each level is one period of deep time: huge, foggy, empty, and not empty.
+A time-travelling heist through prehistory, Backrooms style. You're holding a camcorder and noclipping down through Earth's layers. Each level is one period of deep time: huge, foggy, empty, and not empty.
 
 Pure dread. No weapons. You can only hide, sneak, and run.
 
 Godot 4.5 (GL Compatibility), GDScript. Built for the web, without threads.
 
-## Levels
+## How it plays
 
-Each level is one layer of deep time. Fill the camcorder's shot list, then find the Backrooms fragment that leads down to the next layer. Clearing a level unlocks the next one, and you can pick any unlocked layer on the title card. Best times are saved on the device (`user://deeptime.cfg`, which is IndexedDB on the web).
+**A time-travelling heist.** You start in the **Chrono Hub**, a little station floating outside time.
 
-Level definitions (look, sound, shot list, text) live in `src/eras.gd`.
+1. Walk to the **TIME CONSOLE** and drop into an era.
+2. Grab what's valuable: eggs, amber, fossils, teeth. The bag holds 3 things, and the heavier it is, the slower and louder you are.
+3. Get back through the **rift** (the Backrooms fragment) to cash in. Die and your bag spills where you fell, so a friend can pick it up.
+4. Everyone is paid the crew's whole haul. Spend it at the **SHOP** kiosk on cosmetics for your chibi time-traveller: suit colours, hats (party, propeller, cowboy, top hat, dino hood, halo, crown) and face gear.
 
-### Level 1: The Coal Forest (Carboniferous, ~307 MYA)
+**Eggs sit in nests**, and they're worth the most. Taking one tells its parent exactly where you are. The first egg taken wakes a second hunter, and every egg darkens the era.
 
-**Goal: fill the camcorder's shot list, then find the way out.** Keep a creature near the centre of frame, close enough and unobstructed, until the red bar fills.
+Money, owned cosmetics, your look and best hauls are saved on the device (`user://deeptime.cfg`, IndexedDB on the web). Level data (look, sound, loot tables) is in `src/eras.gd`; the shop catalogue is in `src/shop.gd`.
 
-| Shot | Creature | The catch |
-|---|---|---|
-| 1 | **Meganeura** (griffinfly) | Drawn to your lamp. Their droning near you counts as noise. |
-| 2 | **Eryops** (2 m amphibian) | Lies in the deep pools and sinks at any nearby noise. It only resurfaces after ~6 to 9 s of quiet, and its eyes shine in the lamp. |
-| 3 | **Pulmonoscorpius** | Sits motionless beside fallen logs. It rattles inside ~4.5 m and strikes if you're still inside ~3.6 m when the rattle ends. |
-| 4 | **Arthropleura** | The thing hunting you. It needs 3 s in frame. |
+### Level 1: The Coal Forest (Carboniferous)
 
-- **Arthropleura hunts by vibration:**
-  - Walking footsteps carry 7 m, running 20 m, crouching 2 m. Water makes every step louder, and so does panting when you're out of breath.
-  - Stand still and it can crawl right past you.
-- **Each finished shot** darkens the swamp and makes the millipede bolder and faster.
-- **The way out** is a scrap of the Backrooms in the swamp, 130 to 165 m from the start. It stays dark until the list is complete. Then its light comes on and a **second millipede** wakes up.
-- **The swamp:** a new layout every run, with scale trees, giant horsetails, tree ferns, fern carpet, fallen logs and black, wadeable pools.
+Arthropleura hunts by vibration: footsteps, splashing, panting, and your voice in co-op. Loot:
+- **Arthropleura eggs** ($150) at its lair
+- **Eryops spawn** ($70) by the pools
+- **Amber** ($45), **Meganeura wings** ($30), **scale-tree cones** ($15)
 
-### Level 2: The Red Waste (Permian, ~259 MYA)
+Also out there: Eryops sinking in the pools, scorpions by the logs that strike if you linger, and Meganeura swarming your lamp.
 
-Red dunes and dry washes, sandstone outcrops, Glossopteris trees, and bones. The hunter is the opposite of Level 1's: **Inostrancevia can't hear you, but it sees everything.**
+### Level 2: The Red Waste (Permian)
 
-- Its awareness builds while you're in its view cone with a clear line of sight. It builds faster when you're close, moving, or have the lamp on, and slower when you're crouched.
-- It prowls, then stalks (low, with a growl), then charges (with a roar), and it's faster than you can run. Put rock between you: it goes to where it last saw you and searches.
-
-| Shot | Creature | The catch |
-|---|---|---|
-| 1 | **Scutosaurus** | Armoured grazers in slow, drifting herds. Harmless and loud. |
-| 2 | **Dicynodon** | Sits in its burrow mouth. It ducks underground if you walk up on it or shine the lamp at it, so crouch in. |
-| 3 | **Inostrancevia** | 3 s in frame. |
-
-Every mesh is procedural (`src/meshes.gd`). The creature and effect sounds are synthesized at load time (`src/synth.gd`). The swamp ambience is two CC0 field recordings; see `audio/CREDITS.md`.
+Inostrancevia hunts by sight: keep rock between you. Loot:
+- **Scutosaurus eggs** ($170) by the herds
+- **Dicynodon eggs** ($85) at the burrows
+- **Gorgon teeth** ($60) among the bones
+- **Amber** ($45), **Glossopteris fossils** ($25)
 
 ## Co-op (up to 4, server authoritative)
 
-**PLAY WITH FRIENDS** on the title card: host a room and share its 4-letter code, or join one. The host picks the level.
+**PLAY WITH FRIENDS** (on the title card or at the console): host a room and share its 4-letter code, or join one. The crew meets in the hub, sees each other's outfits, and the host drives the time console.
 
 - **Server authoritative.** One headless Godot process (`-- server port=N`, the same project exported with the "Server" preset) hosts every room. Each room runs the real level (`main.gd` in `server` mode) inside its own SubViewport, so each room gets its own physics world.
   - The server owns every player's position, every creature, shots, deaths and the door. Clients send only input (30 Hz); they predict their own movement and reconcile it against 20 Hz snapshots.
   - Creatures are puppets on clients. Levels are built from the room's seed, so every creature list lines up by index. See `src/net.gd`.
-- **Everyone films their own shot list.** The first finished list wakes the second hunter. Each player has to get through the door; the level ends when nobody is left inside. Anyone through means the crew goes deeper.
+- A drop ends when nobody is left in the era, whether they're home or caught. Then everyone returns to the hub and gets paid.
 - **Proximity voice.** Browser WebRTC (Opus, echo cancellation), signalled through the game server and placed in 3D at each speaker's head, with a camcorder band-pass (`src/voice.gd`).
   - **Talking is noise:** the millipede hears you.
   - The living can't hear the dead; the dead hear everyone.
@@ -70,9 +61,9 @@ The web build connects to `wss://deep-time-coop.fly.dev` by default. Override it
 
 ## Controls
 
-Desktop: WASD move · mouse look · Shift run · C / Ctrl crouch · F lamp · Esc pause · co-op: 1-4 emotes, M mute
+Desktop: WASD move · mouse look · Shift run · C / Ctrl crouch · F lamp · E grab / use · G drop · Esc pause · co-op: 1-4 emotes, M mute
 
-Phone (portrait or landscape): left thumb is a floating stick (drag past the ring to run) · right thumb looks · LAMP and CROUCH buttons. Touch mode turns on automatically on touchscreens; force it with `?touch`.
+Phone (portrait or landscape): left thumb is a floating stick (drag past the ring to run) · right thumb looks · LAMP, CROUCH, GRAB / USE and DROP buttons. Touch mode turns on automatically on touchscreens; force it with `?touch`.
 
 ## Dev
 

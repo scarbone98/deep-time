@@ -304,6 +304,13 @@ func _pick_roam() -> void:
 	target.z = clampf(target.z, -lim, lim)
 
 
+## Its nest was robbed: it knows exactly where.
+func alarm(at: Vector3) -> void:
+	if active and feeding <= 0.0 and not hear_off:
+		_hunt(at)
+		timer = 8.0
+
+
 func hear(at: Vector3, radius: float) -> void:
 	if not active or hear_off or feeding > 0.0:
 		return

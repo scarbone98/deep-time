@@ -8,10 +8,14 @@ const LOOK := 0.006
 
 signal emote(e: int)
 signal mic
+signal use
+signal drop
 
 var player: Player
 var coop := false
 var emotes_open := false
+var use_label := ""
+var can_drop := false
 var move := Vector2.ZERO
 var run := false
 var crouch := false
@@ -34,6 +38,10 @@ func _buttons() -> Dictionary:
 		"lamp": Vector2(s.x - 62, s.y - 190),
 		"crouch": Vector2(s.x - 62, s.y - 110),
 	}
+	if use_label != "":
+		b["use"] = Vector2(s.x - 62, s.y - 270)
+	if can_drop:
+		b["drop"] = Vector2(s.x - 62, s.y - 350)
 	if coop:
 		b["mic"] = Vector2(s.x - 136, s.y - 110)
 		b["emote"] = Vector2(s.x - 136, s.y - 190)
@@ -58,6 +66,10 @@ func _input(e: InputEvent) -> void:
 				player.toggle_light()
 			elif hit == "crouch":
 				crouch = not crouch
+			elif hit == "use":
+				use.emit()
+			elif hit == "drop":
+				drop.emit()
 			elif hit == "mic":
 				mic.emit()
 			elif hit == "emote":
@@ -105,6 +117,10 @@ func _draw() -> void:
 	var b := _buttons()
 	_button(b.lamp, "LAMP", player.light.visible)
 	_button(b.crouch, "CROUCH", crouch)
+	if b.has("use"):
+		_button(b.use, use_label, true)
+	if b.has("drop"):
+		_button(b.drop, "DROP", false)
 	if coop:
 		_button(b.mic, "MIC", not Net.voice.muted)
 		_button(b.emote, "EMOTE", emotes_open)
@@ -119,3 +135,7 @@ func _button(at: Vector2, label: String, on: bool) -> void:
 	draw_arc(at, 30.0, 0, TAU, 32, Color(1, 1, 1, 0.4), 1.5)
 	var w := font.get_string_size(label, HORIZONTAL_ALIGNMENT_LEFT, -1, 11).x
 	draw_string(font, at + Vector2(-w * 0.5, 4), label, HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color(1, 1, 1, 0.8))
+
+
+func _process(_dt: float) -> void:
+	queue_redraw()

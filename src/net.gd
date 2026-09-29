@@ -17,7 +17,7 @@ signal snapshot(data: PackedFloat32Array)
 signal event(ev: Array)
 signal left
 
-const VERSION := 1
+const VERSION := 2
 const MAX_PLAYERS := 4
 const DEFAULT_URL := "wss://deep-time-coop.fly.dev"
 const CODE_ALPHABET := "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
@@ -36,7 +36,8 @@ var code := ""
 var my_id := 0
 var host_id := 0
 var members := {}  # peer id -> {"name": String, "color": int}
-var phase := "lobby"
+var phase := "hub"
+var in_level := false  # a level (the hub counts) is loaded for us
 var level := 1
 var seed_ := 0
 var player_name := ""
@@ -74,12 +75,12 @@ func server_url(flags: Dictionary) -> String:
 # ============================================================ client side
 
 ## Host a new room (code "") or join one.
-func join(url: String, pname: String, room_code: String, create: bool) -> void:
+func join(url: String, pname: String, room_code: String, create: bool, look := {}) -> void:
 	leave(false)
 	player_name = clean_name(pname)
 	if player_name == "":
 		player_name = "CAM %d" % (randi() % 90 + 10)
-	_pending = {"code": room_code.to_upper().strip_edges(), "create": create}
+	_pending = {"code": room_code.to_upper().strip_edges(), "create": create, "look": look}
 	var p := WebSocketMultiplayerPeer.new()
 	var err := p.create_client(url)
 	if err != OK:
@@ -96,9 +97,10 @@ func leave(emit := true) -> void:
 	if not is_server:
 		multiplayer.multiplayer_peer = OfflineMultiplayerPeer.new()
 	online = false
+	in_level = false
 	members = {}
 	code = ""
-	phase = "lobby"
+	phase = "hub"
 	voice.drop_all()
 	if was and emit:
 		left.emit()
@@ -107,7 +109,7 @@ func leave(emit := true) -> void:
 func _on_connected() -> void:
 	my_id = multiplayer.get_unique_id()
 	print("net: connected as ", my_id)
-	c_hello.rpc_id(1, VERSION, player_name, _pending.get("code", ""), _pending.get("create", true))
+	c_hello.rpc_id(1, VERSION, player_name, _pending.get("code", ""), _pending.get("create", true), _pending.get("look", {}))
 
 
 func _on_failed() -> void:
@@ -122,6 +124,14 @@ func _on_server_gone() -> void:
 
 func start_level(lvl: int) -> void:
 	c_start.rpc_id(1, lvl)
+
+
+func set_look(look: Dictionary) -> void:
+	c_look.rpc_id(1, look)
+
+
+func act(kind: int, arg: int) -> void:
+	c_act.rpc_id(1, kind, arg)
 
 
 func loaded() -> void:
@@ -174,6 +184,7 @@ func s_level(lvl: int, sd: int, mem: Dictionary) -> void:
 	seed_ = sd
 	members = mem
 	phase = "play"
+	in_level = true
 	level_start.emit()
 
 
@@ -229,7 +240,7 @@ func _push_room(room: Dictionary) -> void:
 
 
 @rpc("any_peer", "call_remote", "reliable")
-func c_hello(version: int, pname: String, room_code: String, create: bool) -> void:
+func c_hello(version: int, pname: String, room_code: String, create: bool, look: Dictionary) -> void:
 	if not is_server:
 		return
 	var id := multiplayer.get_remote_sender_id()
@@ -240,8 +251,8 @@ func c_hello(version: int, pname: String, room_code: String, create: bool) -> vo
 	room_code = room_code.to_upper().strip_edges()
 	if create:
 		var c := room_code if room_code.length() == 4 and not rooms.has(room_code) else _new_code()
-		room = {"code": c, "host": id, "members": {}, "level": 1, "seed": 0, "phase": "lobby",
-			"session": null, "vp": null, "loaded": {}, "t": 0.0}
+		room = {"code": c, "host": id, "members": {}, "level": 0, "seed": 0, "phase": "loading",
+			"session": null, "vp": null, "loaded": {}, "t": 0.0, "next": 0}
 		rooms[c] = room
 	else:
 		if not rooms.has(room_code):
@@ -258,12 +269,14 @@ func c_hello(version: int, pname: String, room_code: String, create: bool) -> vo
 	while color in used:
 		color += 1
 	var n := clean_name(pname)
-	room.members[id] = {"name": n if n != "" else "CAM %d" % (id % 90 + 10), "color": color}
+	room.members[id] = {"name": n if n != "" else "CAM %d" % (id % 90 + 10), "color": color, "look": Shop.clean_look(look)}
 	peer_room[id] = room.code
 	print("room %s: %s joined (%d)" % [room.code, room.members[id].name, room.members.size()])
 	_push_room(room)
-	if room.phase != "lobby":
-		# drop in on the level already running
+	if room.session == null:
+		_begin_level(room, 0)  # a new room opens on the hub
+	else:
+		# drop in on whatever's running
 		s_level.rpc_id(id, room.level, room.seed, _roster(room))
 
 
@@ -271,9 +284,28 @@ func c_hello(version: int, pname: String, room_code: String, create: bool) -> vo
 func c_start(lvl: int) -> void:
 	var id := multiplayer.get_remote_sender_id()
 	var room: Dictionary = rooms.get(peer_room.get(id, ""), {})
-	if room.is_empty() or room.host != id or room.phase != "lobby":
+	if room.is_empty() or room.host != id or room.level != 0 or room.phase != "play":
 		return
 	_begin_level(room, clampi(lvl, 1, Eras.COUNT))
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func c_look(look: Dictionary) -> void:
+	var id := multiplayer.get_remote_sender_id()
+	var room: Dictionary = rooms.get(peer_room.get(id, ""), {})
+	if room.is_empty() or not room.members.has(id):
+		return
+	room.members[id].look = Shop.clean_look(look)
+	_push_room(room)
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func c_act(kind: int, arg: int) -> void:
+	var id := multiplayer.get_remote_sender_id()
+	var room: Dictionary = rooms.get(peer_room.get(id, ""), {})
+	if room.is_empty() or room.session == null:
+		return
+	room.session.act(id, kind, arg)
 
 
 func _begin_level(room: Dictionary, lvl: int) -> void:
@@ -319,6 +351,7 @@ func c_loaded() -> void:
 	room.session.add_net_player(id, room.members[id])
 	if room.phase == "play":
 		s_event.rpc_id(id, ["go"])
+		room.session.sync_loot(id)
 	elif room.loaded.size() >= room.members.size():
 		_go(room)
 
@@ -367,10 +400,14 @@ func room_event(room: Dictionary, ev: Array) -> void:
 		s_event.rpc_id(id, ev)
 
 
-func room_over(room: Dictionary, cleared: bool) -> void:
+func room_event_to(id: int, ev: Array) -> void:
+	s_event.rpc_id(id, ev)
+
+
+func room_over(room: Dictionary, _haul: int) -> void:
 	room.phase = "card"
 	room.t = 0.0
-	room.next = (room.level + 1 if cleared else room.level)
+	room.next = 0  # home to the hub
 
 
 func _on_peer_gone(id: int) -> void:
@@ -404,11 +441,4 @@ func _process(dt: float) -> void:
 		if room.phase == "loading" and room.t > LOAD_TIMEOUT and not room.loaded.is_empty():
 			_go(room)
 		elif room.phase == "card" and room.t > CARD_TIME:
-			if room.next > Eras.COUNT:
-				# the bottom of the tape: back to the lobby
-				_end_session(room)
-				room.phase = "lobby"
-				room.level = 1
-				_push_room(room)
-			else:
-				_begin_level(room, room.next)
+			_begin_level(room, 0)

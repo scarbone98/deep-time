@@ -1,7 +1,7 @@
 class_name Ragdoll
 extends Node3D
-## What's left when a friend's signal is lost: six rigid bodies pinned
-## together, thrown the way whatever got them was going.
+## What's left when a friend's signal is lost: a floppy chibi of rigid
+## bodies pinned together, thrown the way whatever got them was going.
 
 const LAYER := 1 << 8
 const MASK := 1 | (1 << 7)  # trunks and rocks, and the ground
@@ -10,21 +10,31 @@ const MASK := 1 | (1 << 7)  # trunks and rocks, and the ground
 func setup(parts: Dictionary, at: Vector3, yaw: float, push: Vector3) -> void:
 	position = at
 	var b := Basis(Vector3.UP, yaw)
-	var torso := _body(parts.torso, b * Vector3(0, 0.92, 0), Vector3(0.36, 0.6, 0.26), Vector3(0, 0.3, 0), b, 4.0)
-	var head := _body(parts.head, b * Vector3(0, 1.54, 0), Vector3(0.26, 0.3, 0.26), Vector3(0, 0.15, 0), b, 1.0)
-	_pin(torso, head, b * Vector3(0, 1.52, 0) + at)
+	var body := _body([parts.body], b * Vector3(0, 0.5, 0), Vector3(0.52, 0.56, 0.5), Vector3(0, 0.28, 0), b, 4.0)
+	var head_meshes := [parts.head, parts.face]
+	var head := _body(head_meshes, b * Vector3(0, 1.02, 0), Vector3(0.7, 0.68, 0.7), Vector3(0, 0.34, 0), b, 2.0)
+	if parts.get("hat"):
+		var hm := MeshInstance3D.new()
+		hm.mesh = parts.hat
+		hm.position.y = 0.66
+		head.add_child(hm)
+	if parts.get("gear"):
+		var gm := MeshInstance3D.new()
+		gm.mesh = parts.gear
+		head.add_child(gm)
+	_pin(body, head, b * Vector3(0, 1.02, 0) + at)
 	for sd in [-1.0, 1.0]:
-		var leg := _body(parts.leg, b * Vector3(0.1 * sd, 0.92, 0), Vector3(0.16, 0.9, 0.18), Vector3(0, -0.45, 0), b, 1.5)
-		_pin(torso, leg, b * Vector3(0.1 * sd, 0.92, 0) + at)
-		var arm := _body(parts.arm, b * Vector3(0.22 * sd, 1.44, 0), Vector3(0.12, 0.64, 0.12), Vector3(0, -0.32, 0), b, 0.8)
-		_pin(torso, arm, b * Vector3(0.22 * sd, 1.44, 0) + at)
+		var leg := _body([parts.leg], b * Vector3(0.13 * sd, 0.52, 0), Vector3(0.2, 0.5, 0.24), Vector3(0, -0.24, 0), b, 1.0)
+		_pin(body, leg, b * Vector3(0.13 * sd, 0.52, 0) + at)
+		var arm := _body([parts.arm], b * Vector3(0.3 * sd, 0.9, 0), Vector3(0.16, 0.4, 0.16), Vector3(0, -0.2, 0), b, 0.6)
+		_pin(body, arm, b * Vector3(0.3 * sd, 0.9, 0) + at)
 	for c in get_children():
 		if c is RigidBody3D:
-			c.linear_velocity = push + Vector3(randf_range(-1, 1), randf_range(1, 3), randf_range(-1, 1))
+			c.linear_velocity = push + Vector3(randf_range(-1, 1), randf_range(2, 4), randf_range(-1, 1))
 			c.angular_velocity = Vector3(randf_range(-6, 6), randf_range(-6, 6), randf_range(-6, 6))
 
 
-func _body(mesh: Mesh, at: Vector3, size: Vector3, center: Vector3, b: Basis, mass: float) -> RigidBody3D:
+func _body(meshes: Array, at: Vector3, size: Vector3, center: Vector3, b: Basis, mass: float) -> RigidBody3D:
 	var rb := RigidBody3D.new()
 	rb.mass = mass
 	rb.collision_layer = LAYER
@@ -37,9 +47,10 @@ func _body(mesh: Mesh, at: Vector3, size: Vector3, center: Vector3, b: Basis, ma
 	cs.shape = bx
 	cs.position = center
 	rb.add_child(cs)
-	var mi := MeshInstance3D.new()
-	mi.mesh = mesh
-	rb.add_child(mi)
+	for m in meshes:
+		var mi := MeshInstance3D.new()
+		mi.mesh = m
+		rb.add_child(mi)
 	add_child(rb)
 	return rb
 

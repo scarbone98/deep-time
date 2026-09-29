@@ -29,6 +29,8 @@ var focus: Control
 var focus_name := ""
 var focus_prog := 0.0
 var flash := 0.0
+var clean := 0.0
+var prompt_label: Label
 var stage_box: HBoxContainer
 var menu_box: VBoxContainer
 var menu_fields := {}
@@ -85,6 +87,13 @@ func _ready() -> void:
 	spec_label.offset_right = 250
 	spec_label.offset_top = 40
 	shot_label = _label(osd, "", 11, Vector2(20, 40))
+	prompt_label = _label(osd, "", 14, Vector2.ZERO)
+	prompt_label.set_anchors_preset(Control.PRESET_CENTER)
+	prompt_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	prompt_label.offset_left = -300
+	prompt_label.offset_right = 300
+	prompt_label.offset_top = 36
+	prompt_label.modulate = Color(1.0, 0.95, 0.6)
 	shot_label.modulate = Color(1, 1, 1, 0.85)
 	focus = Control.new()
 	focus.set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -257,6 +266,20 @@ func spec(who: String, touch: bool) -> void:
 	spec_label.text = "" if who == "" else "WATCHING %s'S TAPE   -   %s to switch" % [who, "tap" if touch else "click"]
 
 
+## A full-screen panel (the shop) that sits under the tape shader.
+func add_panel(c: Control) -> void:
+	add_child(c)
+	move_child(c, get_child_count() - 2)
+
+
+func prompt(t: String) -> void:
+	prompt_label.text = t
+
+
+func set_list(t: String) -> void:
+	shot_label.text = t
+
+
 func set_shots(shots: Array) -> void:
 	var lines := ["SHOT LIST"]
 	for s in shots:
@@ -349,3 +372,4 @@ func _process(dt: float) -> void:
 	mat.set_shader_parameter("dark", dark)
 	mat.set_shader_parameter("static_amt", static_amt)
 	mat.set_shader_parameter("white", white)
+	mat.set_shader_parameter("clean", clean)

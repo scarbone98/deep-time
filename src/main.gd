@@ -1,37 +1,46 @@
 extends Node3D
-## DEEP TIME: Backrooms through prehistory. One level of deep time, rebuilt
-## from the era table in eras.gd.
+## DEEP TIME: a time-travelling heist. You start in the Chrono Hub, a little
+## station floating outside time. Walk to the TIME CONSOLE to drop into an
+## era; grab eggs and valuables while something hunts you; get back out
+## through the rift. Whatever the crew brings home is paid out, and the SHOP
+## kiosk in the hub turns it into hats.
 ##
-## The same session runs in three modes:
-##   solo    one player, everything local (Run carries progress between reloads)
-##   server  authoritative: every player, creature, shot and death; no view.
-##           The Net autoload runs one per room, inside a SubViewport.
-##   client  draws the level from the server's snapshots: your own movement is
-##           predicted and corrected, friends are Avatars, creatures are puppets
+## Level 0 is the hub; 1.. are eras (eras.gd). The same session runs as:
+##   solo    one player, everything local (Run carries state across reloads)
+##   server  authoritative: players, creatures, loot, deaths, the rift. No
+##           view. The Net autoload runs one per room, inside a SubViewport.
+##   client  draws the level from the server's snapshots: your own movement
+##           is predicted and corrected, friends are Avatars, creatures are
+##           puppets, loot moves by event
 ##
-## World and creature placement come from the level seed, so the server and
-## every client build the same level and creature lists line up by index.
+## World, creature and loot placement come from the level seed, so server
+## and clients build the same level and every list lines up by index.
 ##
 ## Dev flags (URL query on web, `-- key=value` on desktop):
 ##   play        skip the title card          seed=N   fixed layout
-##   mill=D      put it D m in front of you   exit     start 12 m from the door
-##   light       lamp on                      freeze   creatures hold still
-##   yaw=deg / pitch=deg   look direction     die / win   trigger the ending
-##   shots=N     first N shots already filmed near=eryops|scorp|scuto|dicy (+ neard=m)
-##   level=N     play that level              attract  cabinet video scene
-##   server [port=N]   run as the co-op server       server=URL   co-op server to use
-##   host=NAME / join=CODE (+ name=, code=)  auto co-op    autostart  host starts at 2 players
+##   level=N     start in that era            mill=D   hunter D m in front
+##   exit        start by the rift            light    lamp on
+##   freeze      creatures hold still         yaw= / pitch=  look (degrees)
+##   die         get caught after 1 s         loot[=N] start next to some loot
+##   money=N     set your money               near=eryops|scorp|scuto|dicy (+ neard=m)
+##   attract     cabinet video scene (+ ts=)  debug    log positions
+##   server [port=N] [mill=D]   run as the co-op server   server=URL   use that server
+##   host=NAME [code=ABCD] / join=CODE [name=]   skip the co-op menus
+##   bot         walk in circles              emote=N  emote on repeat
+##   shop / console   open that panel at start
 
 const SNAP_EVERY := 3  # 20 Hz snapshots
 const INPUT_EVERY := 2  # 30 Hz inputs
 const EMOTES := {1: "wave", 2: "point", 3: "scream", 4: "flash"}
+const REACH := 2.6
 
 var mode := "solo"
 var net_room: Dictionary = {}
-var level := 1
+var level := 0
 var seed_ := -1
 var my_id := 1
 var era: Dictionary
+var hub := false
 
 var flags := {}
 var sounds := {}
@@ -40,9 +49,11 @@ var local: Player
 var players := {}  # authority: peer id -> Player
 var avatars := {}  # client: peer id -> Avatar
 var net_players := {}  # client: peer id -> last snapshot entry
+var bags := {}  # peer id -> Array of loot indices (clients learn it by event)
 var mill: Node3D  # the first hunter
 var exit_node: Exit
 var hud: Hud
+var shop_ui: ShopUI
 var flies: Array[Meganeura] = []
 var amb: AudioStreamPlayer
 var rain: AudioStreamPlayer
@@ -57,16 +68,14 @@ var grazers: Array[Grazer] = []
 var dicys: Array[Dicynodon] = []
 var eryopses: Array[Eryops] = []
 var scorps: Array[Scorpion] = []
-var netted: Array = []  # everything but hunters, in snapshot order
+var netted: Array = []  # every creature but the hunters, in snapshot order
+var loot: Array[Loot] = []
+var haul := 0  # the crew's take so far this drop
+var nest_total := 0
+var nest_taken := 0
 var env: Environment
 var sun: DirectionalLight3D
-var door_hint := 0.0
-var shots: Array = []  # the local player's list
-var pshots := {}  # authority: peer id -> that player's list
-var lists_done := {}
 var hunter2 := false
-var win_text := ""
-var win_foot := ""
 var sim_on := false
 var tick := 0
 var in_seq := 0
@@ -76,9 +85,11 @@ var spec_id := 0
 var spec_cam: Camera3D
 var emote_cool := 0.0
 var roster_t := 0.0
-var lobby_level := 1
-var menu := ""
+var ui := ""  # an open panel: "console", "shop", "coop", "title"
+var target_loot: Loot
+var target_spot := ""
 var warned := false
+var end_haul := -1
 
 
 # ================================================================ setup
@@ -93,13 +104,22 @@ func _ready() -> void:
 		set_process(false)
 		set_physics_process(false)
 		return
+	if Run.booted:
+		var keep := {}
+		for k in ["server", "touch", "debug", "bot", "autostart", "emote", "yaw", "light"]:
+			if flags.has(k):
+				keep[k] = flags[k]
+		flags = keep
+	Run.booted = true
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	get_tree().root.size_changed.connect(_fit)
 	_fit()
 	_input_map()
 	Run.load_save()
+	if flags.has("money"):
+		Run.money = int(flags.money)
 	Net.level_start.connect(func() -> void: get_tree().reload_current_scene())
-	if Net.online and Net.phase != "lobby":
+	if Net.online and Net.in_level:
 		mode = "client"
 		level = Net.level
 		seed_ = Net.seed_
@@ -107,7 +127,7 @@ func _ready() -> void:
 		Net.snapshot.connect(_on_snap)
 		Net.event.connect(_on_event)
 	else:
-		level = clampi(int(flags.get("level", str(Run.level))), 1, Eras.COUNT)
+		level = clampi(int(flags.get("level", str(Run.level))), 0, Eras.COUNT)
 		Run.level = level
 		seed_ = int(flags.get("seed", str(randi() % 1000000)))
 	Net.room_changed.connect(_on_room_changed)
@@ -115,15 +135,16 @@ func _ready() -> void:
 	Net.left.connect(_on_left)
 	print("seed ", seed_)
 	era = Eras.get_era(level)
-	shots = _fresh_shots()
+	hub = level == 0
 	sounds = Synth.all()
 	touch = flags.has("touch") or DisplayServer.is_touchscreen_available()
 	_build(true)
-	local = _make_player(my_id, true, int(Net.members.get(my_id, {}).get("color", 0)) if mode == "client" else 0)
+	var slot := int(Net.members.get(my_id, {}).get("color", 0)) if mode == "client" else 0
+	local = _make_player(my_id, true, slot)
 	local.bot = flags.has("bot")
-	if mode == "solo":
-		pshots[my_id] = shots
-	exit_node.player = local
+	bags[my_id] = local.bag
+	if exit_node:
+		exit_node.player = local
 	spec_cam = Camera3D.new()
 	spec_cam.fov = 72.0
 	spec_cam.far = 160.0
@@ -131,21 +152,29 @@ func _ready() -> void:
 
 	hud = Hud.new()
 	add_child(hud)
+	hud.clean = 0.8 if hub else 0.0
 	if touch:
 		var pad := TouchPad.new()
 		pad.player = local
 		pad.coop = mode == "client"
 		pad.emote.connect(_emote_pressed)
 		pad.mic.connect(_toggle_mic)
+		pad.use.connect(_use)
+		pad.drop.connect(_drop)
 		hud.add_touch(pad)
 		local.touch = pad
+	shop_ui = ShopUI.new()
+	shop_ui.visible = false
+	shop_ui.closed.connect(_close_ui)
+	shop_ui.looked.connect(_on_look_changed)
+	hud.add_panel(shop_ui)
 	# field recordings (CC0, see audio/CREDITS.md)
 	amb = _loop_player(era.loops[0][0], era.loops[0][1])
 	rain = _loop_player(era.loops[1][0], era.loops[1][1])
 	hud.date.text = era.date
 	sfx = AudioStreamPlayer.new()
 	add_child(sfx)
-	hud.set_shots(shots)
+	_update_list()
 
 	if mode == "client":
 		world.ground_collider()
@@ -154,40 +183,33 @@ func _ready() -> void:
 		if flags.has("light"):
 			local.light.visible = true
 		state = "loading"
-		hud.show_card("ROOM  " + Net.code, "LEVEL %d  -  %s" % [level, era.title], era.intro, "waiting for the crew...")
+		if not hub:
+			hud.show_card("ROOM  " + Net.code, "DROPPING INTO  " + era.title, era.intro, "waiting for the crew...")
 		Net.loaded()
 		return
 	_apply_dev_flags()
-	if flags.has("play") or Run.autostart:
+	if hub and not Run.titled and not flags.has("play") and not Run.autostart:
+		_title()
+	else:
 		Run.autostart = false
 		_start()
-	else:
-		_title()
 	_auto_coop()
 
 
 func _ready_server() -> void:
 	era = Eras.get_era(level)
+	hub = level == 0
 	sounds = Synth.all()
 	_build(false)
 	state = "wait"
-	if Net.dev.has("mill"):  # dev: start it right on top of the spawn
-		var d := float(Net.dev.mill)
-		var at := world.spawn + Vector3(d, 0, 0)
+	if Net.dev.has("mill") and mill:  # dev: start it right by the spawn
+		var at := world.spawn + Vector3(float(Net.dev.mill), 0, 0)
 		hunters.erase(mill)
 		mill.queue_free()
 		mill = _spawn_hunter(at, Vector3.LEFT)
 
 
-func _fresh_shots() -> Array:
-	var list: Array = era.shots.duplicate(true)
-	for sh in list:
-		sh.prog = 0.0
-		sh.done = false
-	return list
-
-
-## World, light, the door and every creature. Deterministic from the seed.
+## World, light, the rift, every creature and every loot. Deterministic.
 func _build(view: bool) -> void:
 	world = World.new()
 	world.lite = touch
@@ -196,10 +218,13 @@ func _build(view: bool) -> void:
 	world.generate(seed_, era.id)
 	if view:
 		_environment()
+	if hub:
+		return
 	exit_node = Exit.new()
 	exit_node.process_mode = Node.PROCESS_MODE_PAUSABLE
 	add_child(exit_node)
 	exit_node.setup(world, sounds, null, era.exit)
+	exit_node.activate()
 	var rng := RandomNumberGenerator.new()
 	rng.seed = seed_ + 99
 	var mstart := _creature_start(rng, 60.0, 85.0)
@@ -218,6 +243,54 @@ func _build(view: bool) -> void:
 	if mode == "client":
 		for c in netted:
 			c.puppet = true
+	_place_loot(mstart)
+
+
+## Eggs in nests by the hunter's lair (and the herds), spawn by the pools,
+## eggs at the burrows, teeth among the bones, the rest scattered.
+func _place_loot(lair: Vector3) -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = seed_ + 777
+	var nests := [lair]
+	for g in grazers:
+		var c: Vector3 = g.herd.center
+		if nests.size() < 3 and c.distance_to(nests[-1]) > 20.0:
+			nests.append(c)
+	var pools := world.pools(4) if era.id == "carboniferous" else []
+	for info in era.loot:
+		for k in int(info.count):
+			var at := Vector3.ZERO
+			match str(info.where):
+				"nest":
+					var c: Vector3 = nests[k % nests.size()]
+					var off := Vector3(rng.randf_range(-1.2, 1.2), 0, rng.randf_range(-1.2, 1.2))
+					at = c + off
+					if world.height_at(at.x, at.z) < 0.05:
+						at = world.shore_near(at, rng)
+					nest_total += 1
+				"near_pool":
+					if pools.is_empty():
+						at = world.dry_point(rng)
+					else:
+						at = world.shore_near(pools[k % pools.size()], rng)
+				"burrow":
+					if world.burrows.is_empty():
+						at = world.dry_point(rng)
+					else:
+						at = world.burrows[rng.randi() % world.burrows.size()] + Vector3(rng.randf_range(-1.5, 1.5), 0, rng.randf_range(-1.5, 1.5))
+				"bones":
+					if world.bone_spots.is_empty():
+						at = world.dry_point(rng)
+					else:
+						at = world.bone_spots[rng.randi() % world.bone_spots.size()] + Vector3(rng.randf_range(-1, 1), 0, rng.randf_range(-1, 1))
+				_:
+					at = world.dry_point(rng)
+			at.y = world.height_at(at.x, at.z)
+			var l := Loot.new()
+			l.process_mode = Node.PROCESS_MODE_PAUSABLE
+			add_child(l)
+			l.setup(loot.size(), info, at)
+			loot.append(l)
 
 
 func _authority() -> bool:
@@ -426,7 +499,7 @@ func _environment() -> void:
 func _input_map() -> void:
 	var m := {
 		"fwd": [KEY_W, KEY_UP], "back": [KEY_S, KEY_DOWN], "left": [KEY_A, KEY_LEFT], "right": [KEY_D, KEY_RIGHT],
-		"sprint": [KEY_SHIFT], "crouch": [KEY_C, KEY_CTRL], "light": [KEY_F],
+		"sprint": [KEY_SHIFT], "crouch": [KEY_C, KEY_CTRL], "light": [KEY_F], "use": [KEY_E], "drop": [KEY_G],
 		"emote1": [KEY_1], "emote2": [KEY_2], "emote3": [KEY_3], "emote4": [KEY_4], "mute": [KEY_M],
 	}
 	for a in m:
@@ -454,20 +527,22 @@ func _parse_flags() -> Dictionary:
 
 
 func _apply_dev_flags() -> void:
-	if flags.has("exit"):
-		var back := Vector3(sin(world.exit_yaw), 0, cos(world.exit_yaw))
-		var p := world.exit_pos + back * 12.0
-		p.y = world.height_at(p.x, p.z)
-		local.position = p
-		local.yaw = world.exit_yaw
 	if flags.has("yaw"):
 		local.yaw = deg_to_rad(float(flags.yaw))
 	if flags.has("pitch"):
 		local.pitch = deg_to_rad(float(flags.pitch))
 	if flags.has("light"):
 		local.light.visible = true
-	local.rotation.y = local.yaw
-	local.head.rotation.x = local.pitch
+	if hub:
+		local.rotation.y = local.yaw
+		local.head.rotation.x = local.pitch
+		return
+	if flags.has("exit"):
+		var back := Vector3(sin(world.exit_yaw), 0, cos(world.exit_yaw))
+		var p := world.exit_pos + back * 12.0
+		p.y = world.height_at(p.x, p.z)
+		local.position = p
+		local.yaw = world.exit_yaw
 	if flags.has("mill"):
 		var fwd := Basis(Vector3.UP, local.yaw) * Vector3.FORWARD
 		var at := local.position + fwd * float(flags.mill)
@@ -475,91 +550,135 @@ func _apply_dev_flags() -> void:
 		hunters.erase(old)
 		old.queue_free()
 		mill = _spawn_hunter(at, Basis(Vector3.UP, float(flags.get("mturn", "1.1"))) * -fwd)
+	var target: Node3D = null
 	if flags.has("near"):
 		var pool := {"eryops": eryopses, "scorp": scorps, "scuto": grazers, "dicy": dicys}.get(flags.near, []) as Array
-		var target: Node3D = pool[0] if not pool.is_empty() else null
-		if target:
-			var dist := float(flags.get("neard", "12" if target is Eryops else "7"))
-			var a := randf() * TAU
-			var p := target.global_position + Vector3(cos(a), 0, sin(a)) * dist
-			for k in 24:
-				if world.height_at(p.x, p.z) > -0.2:
-					break
-				a += 0.26
-				p = target.global_position + Vector3(cos(a), 0, sin(a)) * dist
-			p.y = world.height_at(p.x, p.z)
-			local.position = p
-			var to := target.global_position - p
-			local.yaw = atan2(-to.x, -to.z)
-			local.pitch = -0.12
-			local.rotation.y = local.yaw
-			local.head.rotation.x = local.pitch
-	for k in int(flags.get("shots", "0")):
-		shots[k].done = true
-		_escalate(false)
-	if shots.all(func(sh: Dictionary) -> bool: return sh.done):
-		lists_done[my_id] = true
-	hud.set_shots(shots)
+		target = pool[0] if not pool.is_empty() else null
+	if flags.has("loot") and not loot.is_empty():
+		target = loot[clampi(int(flags.loot) if flags.loot != "1" else 0, 0, loot.size() - 1)]
+	if target:
+		var dist := float(flags.get("neard", "1.8" if target is Loot else ("12" if target is Eryops else "7")))
+		var a := randf() * TAU
+		var p := target.global_position + Vector3(cos(a), 0, sin(a)) * dist
+		for k in 24:
+			if world.height_at(p.x, p.z) > -0.2:
+				break
+			a += 0.26
+			p = target.global_position + Vector3(cos(a), 0, sin(a)) * dist
+		p.y = world.height_at(p.x, p.z)
+		local.position = p
+		var to := target.global_position - p
+		local.yaw = atan2(-to.x, -to.z)
+		local.pitch = -0.6 if target is Loot else -0.12
+	local.rotation.y = local.yaw
+	local.head.rotation.x = local.pitch
+	if flags.has("give"):  # dev: start carrying these (comma list)
+		for i in str(flags.give).split(","):
+			var l := loot[clampi(int(i), 0, loot.size() - 1)]
+			l.position = local.position
+			sim_on = true
+			act(my_id, 1, l.idx)
+			sim_on = false
 	if flags.has("fly"):
 		for f in flies:
 			f.position = local.position + Vector3(randf_range(-4, 4), 2.5, randf_range(-6, -2)).rotated(Vector3.UP, local.yaw)
 
 
-# ================================================================ title and lobby
+# ================================================================ the hub: title, console, shop, co-op
 
 func _title() -> void:
 	state = "title"
-	menu = ""
-	if Net.online:
-		_room_menu()
-		return
-	var controls := "left thumb move (drag past the ring to run)\nright thumb look" if touch else "WASD move    SHIFT run    C crouch    F lamp"
-	hud.show_card("DEEP TIME", "LEVEL %d  -  %s" % [level, era.title], era.intro + "\n\n" + controls,
-		"tap to start recording" if touch else "click to start recording")
-	hud.show_stages(_stage_list(level), _pick_stage)
-	hud.show_menu([{"type": "button", "text": "PLAY WITH FRIENDS", "cb": _coop_menu}])
+	ui = "title"
+	hud.show_card("DEEP TIME", "a time-travelling heist",
+		"Drop into prehistory. Grab the eggs and the treasure.\nGet back through the rift before something gets you.\nSpend the haul on hats.",
+		"", 0.8)
+	hud.show_menu([
+		{"type": "button", "text": "PLAY", "cb": func() -> void:
+			Run.titled = true
+			_start()},
+		{"type": "button", "text": "PLAY WITH FRIENDS", "cb": func() -> void:
+			Run.titled = true
+			_start()
+			_coop_menu()},
+	])
 
 
-func _stage_list(current: int) -> Array:
-	var stages := []
+func _open(name_: String) -> void:
+	ui = name_
+	local.control = false
+	local.velocity = Vector3.ZERO
+	if not touch:
+		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+
+
+func _close_ui() -> void:
+	ui = ""
+	hud.hide_card()
+	hud.show_menu([])
+	hud.show_stages([], Callable())
+	shop_ui.visible = false
+	if state == "play" and local.alive and not local.through:
+		local.control = true
+		if not touch:
+			Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+
+
+func _console() -> void:
+	_open("console")
+	var host := mode == "solo" or Net.host_id == Net.my_id
+	var lines := []
 	for n in range(1, Eras.COUNT + 1):
 		var e := Eras.get_era(n)
-		var label := "%d %s" % [n, e.title]
-		var locked := n > Run.unlocked and n != current
-		if locked:
-			label = "%d ??????" % n
-		elif Run.best.has(n):
-			label += " (%s)" % Run.clock(float(Run.best[n]))
-		stages.append({"n": n, "label": label, "locked": locked, "current": n == current})
-	return stages
+		var best := ("   best haul " + Run.cash(int(Run.best[n]))) if Run.best.has(n) else ""
+		lines.append("%d  %s%s\n%s" % [n, e.title, best, e.blurb])
+	hud.show_card("TIME CONSOLE", ("ROOM  %s" % Net.code) if mode == "client" else "where to?", "\n\n".join(lines), "", 0.88)
+	var items := []
+	if host:
+		var row := []
+		for n in range(1, Eras.COUNT + 1):
+			row.append({"type": "button", "text": "DROP INTO %d" % n, "cb": _drop_into.bind(n)})
+		items.append({"type": "row", "items": row})
+	else:
+		items.append({"type": "label", "text": "%s drives the console" % Net.members.get(Net.host_id, {}).get("name", "the host")})
+	if mode == "client":
+		items.append({"type": "button", "text": "LEAVE ROOM", "cb": func() -> void: Net.leave()})
+	else:
+		items.append({"type": "button", "text": "PLAY WITH FRIENDS", "cb": _coop_menu})
+	items.append({"type": "button", "text": "CLOSE", "cb": _close_ui})
+	hud.show_menu(items)
 
 
-func _pick_stage(n: int) -> void:
-	if Net.online:
-		lobby_level = n
-		_room_menu()
-		return
-	if n == level:
-		_start()
+func _drop_into(n: int) -> void:
+	if mode == "client":
+		Net.start_level(n)
 		return
 	Run.level = n
 	Run.autostart = true
 	get_tree().reload_current_scene()
 
 
+func _shop() -> void:
+	_open("shop")
+	shop_ui.open()
+
+
+func _on_look_changed() -> void:
+	_update_list()
+	if mode == "client":
+		Net.set_look(Run.look)
+
+
 func _coop_menu() -> void:
-	menu = "coop"
-	hud.show_card("PLAY WITH FRIENDS", "up to 4 camcorders", "", "")
-	hud.show_stages([], Callable())
-	var saved := Run.player_name if Run.player_name != "" else ""
+	_open("coop")
+	hud.show_card("PLAY WITH FRIENDS", "up to 4 time-travellers", "", "", 0.88)
 	hud.show_menu([
-		{"type": "edit", "id": "name", "text": saved, "hint": "YOUR NAME"},
+		{"type": "edit", "id": "name", "text": Run.player_name, "hint": "YOUR NAME"},
 		{"type": "button", "text": "HOST A ROOM", "cb": func() -> void: _coop_go(true)},
 		{"type": "row", "items": [
 			{"type": "edit", "id": "code", "text": "", "hint": "CODE", "width": 70},
 			{"type": "button", "text": "JOIN", "cb": func() -> void: _coop_go(false)},
 		]},
-		{"type": "button", "text": "BACK", "cb": _title},
+		{"type": "button", "text": "BACK", "cb": _close_ui},
 		{"type": "status"},
 	])
 
@@ -573,73 +692,49 @@ func _coop_go(create: bool) -> void:
 	if not create and c.strip_edges().length() != 4:
 		hud.status("the code is 4 letters")
 		return
-	Net.join(Net.server_url(flags), n, c, create)
-
-
-func _room_menu() -> void:
-	menu = "room"
-	var names := []
-	for id in Net.members:
-		var m: Dictionary = Net.members[id]
-		names.append(m.name + ("  (host)" if int(id) == Net.host_id else "") + ("  (you)" if int(id) == Net.my_id else ""))
-	hud.show_card("ROOM  " + Net.code, "tell your friends the code", "\n".join(names), "")
-	var host := Net.host_id == Net.my_id
-	lobby_level = clampi(lobby_level, 1, Eras.COUNT)
-	hud.show_stages(_stage_list(lobby_level) if host else [], _pick_stage)
-	var items := []
-	if host:
-		items.append({"type": "button", "text": "START  -  LEVEL %d" % lobby_level, "cb": func() -> void: Net.start_level(lobby_level)})
-	else:
-		items.append({"type": "label", "text": "waiting for %s to start" % Net.members.get(Net.host_id, {}).get("name", "the host")})
-	items.append({"type": "label", "text": "mic on - they'll hear you when you're close" if Net.voice.mic_ok() else "no mic - you can still listen"})
-	items.append({"type": "button", "text": "LEAVE", "cb": func() -> void: Net.leave()})
-	items.append({"type": "status"})
-	hud.show_menu(items)
+	Net.join(Net.server_url(flags), n, c, create, Run.look)
 
 
 func _on_room_changed() -> void:
-	if mode == "client" and Net.phase == "lobby":
-		get_tree().reload_current_scene()
-		return
-	if state == "title":
-		_room_menu()
-		_auto_start_check()
+	for pid in avatars:
+		var m: Dictionary = Net.members.get(pid, {})
+		if not m.is_empty() and Shop.clean_look(m.get("look", {})) != avatars[pid].look:
+			avatars[pid].set_look(m.look)
+			_refresh_carry(pid)
+	if ui == "console":
+		_console()
 
 
 func _on_left() -> void:
-	if mode == "client":
-		get_tree().reload_current_scene()
-	elif state == "title":
-		_title()
+	Run.level = 0
+	Run.autostart = true
+	get_tree().reload_current_scene()
 
 
-## Dev: ?host=NAME (+code=ABCD, autostart) or ?join=CODE (+name=) to skip the menus.
+## Dev: ?host=NAME (+code=ABCD) or ?join=CODE (+name=) skip the menus.
 func _auto_coop() -> void:
-	if Net.online or state != "title":
+	if Net.online:
 		return
 	if flags.has("host"):
-		Net.join(Net.server_url(flags), flags.host, str(flags.get("code", "")), true)
+		Net.join(Net.server_url(flags), flags.host, str(flags.get("code", "")), true, Run.look)
 	elif flags.has("join"):
-		Net.join(Net.server_url(flags), str(flags.get("name", "")), flags.join, false)
+		Net.join(Net.server_url(flags), str(flags.get("name", "")), flags.join, false, Run.look)
 
 
-func _auto_start_check() -> void:
-	if flags.has("autostart") and Net.host_id == Net.my_id and Net.members.size() >= int(flags.get("autostart", "2")):
-		Net.start_level(int(flags.get("level", "1")))
-
-
-# ================================================================ playing
+# ================================================================ starting
 
 func _start() -> void:
 	state = "play"
 	state_t = 0.0
+	ui = ""
 	hud.hide_card()
 	hud.show_stages([], Callable())
 	hud.show_menu([])
 	local.begin()
-	exit_node.begin()
+	if exit_node:
+		exit_node.begin()
 	amb.play()
-	rain.play(randf() * 60.0)
+	rain.play(randf() * 30.0)
 	if not flags.has("freeze"):
 		for m in hunters:
 			m.begin()
@@ -653,14 +748,26 @@ func _start() -> void:
 		# recording is slow: the capture script sets ts so a frame is 1/30 s
 		Engine.time_scale = float(flags.get("ts", "1"))
 		return
-	var tips := [["", 1.5], ["fill the shot list.  keep them in frame.", 4.5], [era.tip, 4.5],
-		["the lamp helps.  the flies like it too." if touch else "SHIFT run   C crouch   F lamp", 5.0]]
+	var tips := []
+	if hub:
+		if Run.last_haul >= 0:
+			tips.append([("+%s" % Run.cash(Run.last_haul)) if Run.last_haul > 0 else "came home empty-handed", 3.5])
+			Run.last_haul = -1
+		tips.append(["the TIME CONSOLE drops you in.  the SHOP sells hats.", 5.0])
+	else:
+		tips = [["", 1.0], ["grab what's valuable.  eggs are worth the most.", 4.5], [era.tip, 4.5],
+			["E grab   G drop   back through the rift to cash in" if not touch else "GRAB it.  bring it home through the rift.", 5.0]]
 	if mode == "client":
-		tips.append(["talking is noise too." if Net.voice.mic_ok() else "", 4.0])
 		if not touch:
 			tips.push_front(["click to grab the camera", 3.0])
 			tips.append(["1 wave  2 point  3 scream  4 flash   M mute", 5.0])
+		if Net.voice.mic_ok() and not hub:
+			tips.append(["talking is noise too.", 3.0])
 	hud.say(tips)
+	if flags.has("shop") and hub:
+		_shop()
+	elif flags.has("console") and hub:
+		_console()
 
 
 ## Server: everyone's loaded (or the wait timed out). Let it begin.
@@ -680,16 +787,18 @@ func add_net_player(id: int, info: Dictionary) -> void:
 		return
 	var p := _make_player(id, false, int(info.color))
 	p.input_mode = "net"
-	pshots[id] = _fresh_shots()
+	bags[id] = p.bag
 	if sim_on:
 		p.begin()
 
 
 func remove_net_player(id: int) -> void:
 	if players.has(id):
-		players[id].queue_free()
+		var p: Player = players[id]
+		if p.alive and not p.through:
+			_spill(p)
+		p.queue_free()
 		players.erase(id)
-		pshots.erase(id)
 	_check_end()
 
 
@@ -744,16 +853,15 @@ func _physics_process(dt: float) -> void:
 	if not sim_on:
 		return
 	elapsed += dt
-	for p: Player in alive_players():
-		_film_for(p, dt)
-	for p: Player in alive_players():
-		if lists_done.get(p.id, false) and exit_node.inside(p):
-			_through(p)
+	if exit_node:
+		for p: Player in alive_players():
+			if exit_node.inside(p):
+				_through(p)
 	if mode == "server":
 		tick += 1
 		if tick % SNAP_EVERY == 0:
 			Net.room_snapshot(net_room, _snapshot())
-		_check_end()
+	_check_end()
 
 
 func _emit(ev: Array) -> void:
@@ -763,9 +871,67 @@ func _emit(ev: Array) -> void:
 		_on_event(ev)
 
 
+## A player (or their client) asked to do something. kind 1: pick up loot
+## #arg. kind 2: drop the last thing carried.
+func act(id: int, kind: int, arg: int) -> void:
+	var p: Player = players.get(id)
+	if p == null or not p.alive or p.through or hub or not sim_on:
+		return
+	if kind == 1:
+		if arg < 0 or arg >= loot.size() or p.bag.size() >= Player.BAG_MAX:
+			return
+		var l := loot[arg]
+		if not l.on_ground() or l.position.distance_to(p.position) > REACH + 0.6:
+			return
+		l.set_state(Loot.CARRIED, id)
+		p.bag.append(arg)
+		p.carry += l.weight
+		_emit(["pick", id, arg])
+		if l.nest:
+			_nest_taken(p, l.position)
+	elif kind == 2 and not p.bag.is_empty():
+		var i: int = p.bag.pop_back()
+		p.carry = maxf(0.0, p.carry - loot[i].weight)
+		var fwd := Basis(Vector3.UP, p.yaw) * Vector3.FORWARD
+		var at := p.position + fwd * 0.9
+		at.y = world.height_at(at.x, at.z)
+		loot[i].set_state(Loot.GROUND, 0, at)
+		_emit(["drop", id, i, at.x, at.y, at.z])
+
+
+## Somebody took an egg: its parent knows.
+func _nest_taken(p: Player, at: Vector3) -> void:
+	nest_taken += 1
+	for m in hunters:
+		m.alarm(at)
+	if not hunter2 and hunters.size() == 1:
+		hunter2 = true
+		var spot := _ring(p.position, 45.0, 60.0)
+		var m2 := _spawn_hunter(spot, Vector3.FORWARD)
+		m2.drift = 0.8
+		m2.hunt_speed += 0.6
+		m2.begin()
+		_emit(["hunter2", spot.x, spot.y, spot.z])
+	for m in hunters:
+		m.drift = minf(0.9, 0.45 + nest_taken * 0.1)
+	_emit(["nest", nest_taken, at.x, at.y, at.z])
+
+
+## Everything they carried falls where they were.
+func _spill(p: Player) -> void:
+	while not p.bag.is_empty():
+		var i: int = p.bag.pop_back()
+		var at := p.position + Vector3(randf_range(-1, 1), 0, randf_range(-1, 1))
+		at.y = world.height_at(at.x, at.z)
+		loot[i].set_state(Loot.GROUND, 0, at)
+		_emit(["drop", p.id, i, at.x, at.y, at.z])
+	p.carry = 0.0
+
+
 func _kill(p: Player, at: Vector3) -> void:
 	if p == null or not p.alive or p.through or not sim_on:
 		return
+	_spill(p)
 	p.alive = false
 	p.vanish()
 	var push := (p.global_position - at)
@@ -775,117 +941,25 @@ func _kill(p: Player, at: Vector3) -> void:
 
 
 func _through(p: Player) -> void:
+	var brought := 0
+	for i in p.bag:
+		brought += loot[i].value
+		loot[i].set_state(Loot.GONE)
+	p.bag.clear()
+	p.carry = 0.0
+	haul += brought
 	p.through = true
 	p.vanish()
-	_emit(["through", p.id, elapsed])
+	_emit(["through", p.id, brought, haul])
 
 
 func _check_end() -> void:
-	if not sim_on or players.is_empty() or not alive_players().is_empty():
+	if hub or not sim_on or players.is_empty() or not alive_players().is_empty():
 		return
 	sim_on = false
-	var cleared := false
-	for p: Player in players.values():
-		if p.through:
-			cleared = true
-	_emit(["end", 1 if cleared else 0])
+	_emit(["end", haul])
 	if mode == "server":
-		Net.room_over(net_room, cleared)
-
-
-## Filming: keep a creature near the centre of frame, close enough, with
-## nothing in the way, and the shot fills up.
-func _film_for(p: Player, dt: float) -> void:
-	var list: Array = pshots.get(p.id, [])
-	var best: Dictionary = {}
-	for sh in list:
-		if sh.done:
-			continue
-		var framed := false
-		for pt in _film_points(sh.id):
-			if _framed(p.cam, pt, sh.range, p):
-				framed = true
-				break
-		if framed and best.is_empty():
-			best = sh
-		else:
-			sh.prog = maxf(0.0, sh.prog - dt * 0.5)
-	if p == local:
-		hud.focus_name = "" if best.is_empty() else best.name
-	if best.is_empty():
-		return
-	best.prog += dt
-	if p == local:
-		hud.focus_prog = clampf(best.prog / best.need, 0.0, 1.0)
-	if best.prog < best.need:
-		return
-	best.done = true
-	var n := 0
-	for sh in list:
-		if sh.done:
-			n += 1
-	_emit(["shot", p.id, list.find(best)])
-	# the team's progress sets how bold the hunters are
-	var most := 0
-	for id in pshots:
-		var c := 0
-		for sh in pshots[id]:
-			if sh.done:
-				c += 1
-		most = maxi(most, c)
-	for m in hunters:
-		m.drift = 0.45 + most * 0.1
-		m.hunt_speed += 0.15
-	if n == list.size():
-		lists_done[p.id] = true
-		if not hunter2:
-			hunter2 = true
-			var at := _ring(p.position, 45.0, 60.0)
-			var m2 := _spawn_hunter(at, Vector3.FORWARD)
-			m2.drift = 0.8
-			m2.hunt_speed += 0.6
-			m2.begin()
-			_emit(["hunter2", at.x, at.y, at.z])
-
-
-func _film_points(id: String) -> Array:
-	var out := []
-	match id:
-		"fly":
-			for f in flies:
-				out.append(f.global_position)
-		"eryops":
-			for e in eryopses:
-				if e.position.y > Eryops.SURFACE - 0.08:
-					out.append(e.film_point())
-		"scorp":
-			for sc in scorps:
-				out.append(sc.film_point())
-		"hunter":
-			for m in hunters:
-				out.append_array(m.film_points())
-		"scuto":
-			for g in grazers:
-				out.append(g.film_point())
-		"dicy":
-			for d in dicys:
-				if d.out():
-					out.append(d.film_point())
-	return out
-
-
-func _framed(cam: Camera3D, pt: Vector3, max_d: float, who: Player) -> bool:
-	var from := cam.global_position
-	var to := pt - from
-	var d := to.length()
-	if d > max_d or d < 0.3:
-		return false
-	var fwd := -cam.global_transform.basis.z
-	if fwd.dot(to / d) < cos(deg_to_rad(14.0)):
-		return false
-	var q := PhysicsRayQueryParameters3D.create(from, pt, 1)
-	q.exclude = [who.get_rid()]
-	return get_world_3d().direct_space_state.intersect_ray(q).is_empty()
+		Net.room_over(net_room, haul)
 
 
 func emote(id: int, e: int) -> void:
@@ -899,19 +973,23 @@ func emote(id: int, e: int) -> void:
 	_emit(["emote", id, e])
 
 
+## A late joiner needs to know where every bit of loot is.
+func sync_loot(id: int) -> void:
+	var a := PackedFloat32Array()
+	for l in loot:
+		a.append_array([l.state, l.holder, l.position.x, l.position.y, l.position.z])
+	Net.room_event_to(id, ["lootall", a, haul])
+
+
 func _snapshot() -> PackedFloat32Array:
 	var a := PackedFloat32Array([Time.get_ticks_msec() / 1000.0, players.size()])
 	for id in players:
 		var p: Player = players[id]
 		var bits := (1 if p.crouching else 0) | (2 if p.light.visible else 0) | (4 if p.alive else 0) \
 			| (8 if p.through else 0) | (16 if p.moving else 0)
-		var done := 0
-		for sh in pshots.get(id, []):
-			if sh.done:
-				done += 1
 		var slot: int = net_room.members.get(id, {}).get("color", 0)
 		a.append_array([slot, p.position.x, p.position.y, p.position.z, p.yaw, p.pitch, bits, p.seq,
-			p.stamina, p.battery, done, p.talk])
+			p.stamina, p.battery, p.bag.size(), p.talk])
 	a.append(hunters.size())
 	for m in hunters:
 		m.net_get(a)
@@ -951,7 +1029,7 @@ func _on_snap(a: PackedFloat32Array) -> void:
 		var pos := Vector3(a[i + 1], a[i + 2], a[i + 3])
 		var bits := int(a[i + 6])
 		var entry := {"pos": pos, "yaw": a[i + 4], "pitch": a[i + 5], "alive": bits & 4 != 0, "through": bits & 8 != 0,
-			"done": int(a[i + 10]), "talk": a[i + 11]}
+			"bag": int(a[i + 10]), "talk": a[i + 11]}
 		if pid == my_id:
 			_reconcile(pos, int(a[i + 7]), a[i + 8], a[i + 9])
 		elif pid != -1:
@@ -960,8 +1038,9 @@ func _on_snap(a: PackedFloat32Array) -> void:
 				var info: Dictionary = Net.members.get(pid, {"name": "?", "color": 0})
 				av = Avatar.new()
 				add_child(av)
-				av.setup(pid, info.name, Net.COLORS[int(info.color) % Net.COLORS.size()], sounds)
+				av.setup(pid, info.name, info.get("look", {}), sounds)
 				avatars[pid] = av
+				_refresh_carry(pid)
 			av.net_set(pos, a[i + 4], a[i + 5], bits & 1 != 0, bits & 2 != 0, entry.alive, entry.through, entry.talk)
 		if pid != -1:
 			net_players[pid] = entry
@@ -1020,25 +1099,84 @@ func _reconcile(pos: Vector3, seq: int, stam: float, batt: float) -> void:
 # ================================================================ events (solo applies them directly)
 
 func _name(id: int) -> String:
+	if id == my_id and mode == "solo":
+		return "you"
 	return str(Net.members.get(id, {}).get("name", "someone"))
+
+
+func _refresh_carry(pid: int) -> void:
+	var av: Avatar = avatars.get(pid)
+	if av == null:
+		return
+	var ms := []
+	for i in bags.get(pid, []):
+		ms.append(loot[i].mesh)
+	av.set_carry(ms)
+
+
+func _bag_of(pid: int) -> Array:
+	if not bags.has(pid):
+		bags[pid] = []
+	return bags[pid]
 
 
 func _on_event(ev: Array) -> void:
 	match str(ev[0]):
 		"go":
 			_start()
-		"shot":
-			if int(ev[1]) == my_id:
-				var idx := int(ev[2])
-				if idx >= 0 and idx < shots.size():
-					shots[idx].done = true
-				hud.focus_name = ""
-				hud.flash = 1.2
+		"pick":
+			var pid := int(ev[1])
+			var i := int(ev[2])
+			if mode == "client":
+				loot[i].set_state(Loot.CARRIED, pid)
+				_bag_of(pid).append(i)
+				if pid == my_id:
+					local.carry += loot[i].weight
+			_refresh_carry(pid)
+			if pid == my_id:
 				sfx.stream = sounds.beep
-				sfx.volume_db = -4.0
+				sfx.volume_db = -6.0
 				sfx.play()
-				hud.set_shots(shots)
-				_escalate(true)
+				hud.say([["+ %s   %s" % [loot[i].item_name, Run.cash(loot[i].value)], 2.5]])
+			_update_list()
+		"drop":
+			var pid := int(ev[1])
+			var i := int(ev[2])
+			if mode == "client":
+				loot[i].set_state(Loot.GROUND, 0, Vector3(ev[3], ev[4], ev[5]))
+				_bag_of(pid).erase(i)
+				if pid == my_id:
+					local.carry = maxf(0.0, local.carry - loot[i].weight)
+			_refresh_carry(pid)
+			_update_list()
+		"lootall":
+			var a: PackedFloat32Array = ev[1]
+			haul = int(ev[2])
+			for pid in bags:
+				bags[pid].clear()
+			for i in loot.size():
+				var st := int(a[i * 5])
+				var who := int(a[i * 5 + 1])
+				loot[i].set_state(st, who, Vector3(a[i * 5 + 2], a[i * 5 + 3], a[i * 5 + 4]))
+				if st == Loot.CARRIED:
+					_bag_of(who).append(i)
+			for pid in avatars:
+				_refresh_carry(pid)
+			_update_list()
+		"nest":
+			if mode == "client":
+				nest_taken = int(ev[1])
+			_escalate()
+			var p := AudioStreamPlayer3D.new()
+			p.stream = sounds.hiss
+			p.unit_size = 20.0
+			p.max_distance = 200.0
+			p.pitch_scale = 0.6
+			add_child(p)
+			p.global_position = Vector3(ev[2], ev[3], ev[4])
+			p.play()
+			p.finished.connect(p.queue_free)
+			hud.say([["something heard its nest.", 3.5]])
 		"hunter2":
 			if mode == "client" and not hunter2:
 				hunter2 = true
@@ -1047,28 +1185,36 @@ func _on_event(ev: Array) -> void:
 			sfx.stream = sounds.crack
 			sfx.volume_db = 4.0
 			sfx.play()
-			hud.say([["something else woke up.", 4.0]])
+			hud.say([["and something else woke up.", 4.0]])
 		"dead":
+			var pid := int(ev[1])
 			var at := Vector3(ev[2], ev[3], ev[4])
-			if int(ev[1]) == my_id:
+			if pid == my_id:
 				_local_dead(at)
 			else:
-				var av: Avatar = avatars.get(int(ev[1]))
+				var av: Avatar = avatars.get(pid)
 				if av:
 					var rd := Ragdoll.new()
 					add_child(rd)
 					rd.setup(av.parts, av.global_position, av.yaw, Vector3(ev[5], 2.0, ev[6]))
 					av.visible = false
 					get_tree().create_timer(40.0).timeout.connect(rd.queue_free)
-				hud.say([["%s  -  SIGNAL LOST" % _name(int(ev[1])), 3.5]])
+				hud.say([["%s  -  SIGNAL LOST.  their loot is where they fell." % _name(pid), 4.0]])
 		"through":
-			if int(ev[1]) == my_id:
-				_local_through()
-			else:
-				hud.say([["%s slipped through" % _name(int(ev[1])), 3.5]])
-		"end":
+			var pid := int(ev[1])
 			if mode == "client":
-				_end_card(int(ev[1]) == 1)
+				for i in _bag_of(pid):
+					loot[i].set_state(Loot.GONE)
+				_bag_of(pid).clear()
+			haul = int(ev[3])
+			_refresh_carry(pid)
+			_update_list()
+			if pid == my_id:
+				_local_through(int(ev[2]))
+			else:
+				hud.say([["%s made it home  +%s" % [_name(pid), Run.cash(int(ev[2]))], 3.5]])
+		"end":
+			_end(int(ev[1]))
 		"emote":
 			_show_emote(int(ev[1]), int(ev[2]))
 
@@ -1078,63 +1224,112 @@ func _local_dead(at: Vector3) -> void:
 	state_t = 0.0
 	local.vanish()
 	local.die(at)
+	local.carry = 0.0
+	_update_list()
 	hud.say([])
 	sfx.stream = sounds.hiss
 	sfx.volume_db = 2.0
 	sfx.play()
-	if mode == "solo":
-		for m in hunters:
-			m.active = false
 
 
-func _local_through() -> void:
-	if mode == "solo":
-		_win()
-		return
+func _local_through(brought: int) -> void:
 	state = "through"
 	state_t = 0.0
 	local.through = true
 	local.vanish()
+	local.carry = 0.0
 	sfx.stream = sounds.hum
 	sfx.play()
-	Run.record(level, elapsed)
-	hud.say([["you slipped through.", 3.0], ["watching the others...", 3.0]])
+	hud.white = 0.9
+	if mode == "client":
+		hud.say([["home safe  +%s" % Run.cash(brought), 3.0], ["watching the others...", 3.0]])
 
 
-func _end_card(cleared: bool) -> void:
+func _end(total: int) -> void:
+	end_haul = total
+	var fresh := Run.payout(level, total)
+	var was := state
 	state = "card"
-	state_t = 0.0
+	state_t = 0.0 if mode == "client" or was != "dead" else state_t
 	spectating = false
+	if mode == "solo":
+		return  # the card comes after the death / rift animation
 	var made := 0
 	for e in net_players.values():
 		if e.through:
 			made += 1
-	if cleared:
-		hud.show_card("NOCLIP", "%d of %d made it through" % [made, net_players.size()],
-			era.title + "  -  " + Run.clock(elapsed), "going deeper in a moment..." if level < Eras.COUNT else "that's the whole tape. back to the room...", 0.85)
+	if local.through:
+		made += 1
+	hud.show_card("HAUL  " + Run.cash(total), "%d of %d made it home" % [made, net_players.size() + 1],
+		era.title + ("   -   new best!" if fresh and total > 0 else "") + "\neveryone gets paid the crew's haul.",
+		"back to the hub in a moment...", 0.85)
+
+
+# ================================================================ loot: grabbing and dropping
+
+## What's in reach: the loot (or hub spot) nearest the centre of your view.
+func _find_target() -> void:
+	target_loot = null
+	target_spot = ""
+	if state != "play" or not local.alive or local.through or ui != "":
+		return
+	if hub:
+		for k in world.spots:
+			var p: Vector3 = world.spots[k]
+			if Vector2(p.x - local.position.x, p.z - local.position.z).length() < 3.2:
+				target_spot = k
+		return
+	if local.bag.size() >= Player.BAG_MAX:
+		return
+	var eye := local.cam.global_position
+	var fwd := -local.cam.global_transform.basis.z
+	var best := -1.0
+	for l in loot:
+		if not l.on_ground():
+			continue
+		var to := l.global_position + Vector3(0, 0.15, 0) - eye
+		var d := to.length()
+		if d > REACH + 1.2:
+			continue
+		var facing := fwd.dot(to / d)
+		if facing > 0.8 and facing > best:
+			best = facing
+			target_loot = l
+
+
+func _use() -> void:
+	if target_spot == "console":
+		_console()
+	elif target_spot == "shop":
+		_shop()
+	elif target_loot:
+		if mode == "client":
+			Net.act(1, target_loot.idx)
+		else:
+			act(my_id, 1, target_loot.idx)
+
+
+func _drop() -> void:
+	if local.bag.is_empty() or hub:
+		return
+	if mode == "client":
+		Net.act(2, 0)
 	else:
-		hud.show_card("SIGNAL LOST", "nobody made it", era.title, "rewinding the tape...", 0.85)
+		act(my_id, 2, 0)
 
 
-func _win() -> void:
-	state = "won"
-	state_t = 0.0
-	local.control = false
-	for m in hunters:
-		m.active = false
-	hud.say([])
-	sfx.stream = sounds.hum
-	sfx.play()
-	var prev_best: float = float(Run.best.get(level, -1.0))
-	var fresh := Run.record(level, elapsed)
-	var times := "%s   (%s)" % [Run.clock(elapsed), "new best" if fresh else "best " + Run.clock(float(Run.best[level]))]
-	if prev_best < 0.0:
-		times = Run.clock(elapsed)
-	var more := level < Eras.COUNT
-	var next_line := "next:  LEVEL %d  -  %s" % [level + 1, Eras.get_era(level + 1).title] if more \
-		else "that's everything on the tape so far.\nmore of deep time is coming."
-	win_text = "%s  -  %d of %d shots  -  %s\n\n%s" % [era.title, shots.size(), shots.size(), times, next_line]
-	win_foot = ("tap" if touch else "click") + (" to keep going down" if more else " to start again")
+func _update_list() -> void:
+	if hud == null:
+		return
+	if hub:
+		hud.set_list("CHRONO CREDITS\n" + Run.cash(Run.money))
+		return
+	var lines := ["BAG  %d/%d" % [local.bag.size(), Player.BAG_MAX]]
+	for i in local.bag:
+		lines.append("  %s  %s" % [loot[i].item_name, Run.cash(loot[i].value)])
+	lines.append("")
+	lines.append("CREW HAUL  " + Run.cash(haul))
+	hud.set_list("\n".join(lines))
 
 
 # ================================================================ emotes and voice
@@ -1179,7 +1374,7 @@ func _toggle_mic() -> void:
 
 
 ## Place every voice at its speaker. The living can't hear the dead; the
-## dead (and those already through) hear everyone.
+## dead (and those already home) hear everyone.
 func _voice_tick() -> void:
 	var cam := get_viewport().get_camera_3d()
 	if cam == null:
@@ -1192,7 +1387,7 @@ func _voice_tick() -> void:
 		var gain := 1.0
 		if out and not me_out:
 			gain = 0.0
-		Net.voice.peer(pid, e.pos + Vector3(0, 1.6, 0), gain, out and me_out)
+		Net.voice.peer(pid, e.pos + Vector3(0, 1.5, 0), gain, out and me_out)
 
 
 func _roster_tick(dt: float) -> void:
@@ -1204,52 +1399,58 @@ func _roster_tick(dt: float) -> void:
 	for id in Net.members:
 		var m: Dictionary = Net.members[id]
 		var e: Dictionary = net_players.get(int(id), {})
-		var tag := ""
-		if int(id) == my_id:
-			tag = " *"
 		var st := ""
-		if not e.is_empty():
+		if int(id) == my_id:
+			st = "  (you)"
+		elif not e.is_empty() and not hub:
 			if e.through:
-				st = "  >>"
+				st = "  home"
 			elif not e.alive:
 				st = "  x"
-			else:
-				st = "  %d/%d" % [e.done, shots.size()]
-			if e.alive and float(e.talk) > 0.03:
-				st += "  )))"
-		lines.append([str(m.name) + tag + st, Net.COLORS[int(m.color) % Net.COLORS.size()]])
-	hud.set_roster(lines, "MIC OFF" if Net.voice.muted else ("MIC" if Net.voice.mic_ok() else ""))
+			elif int(e.bag) > 0:
+				st = "  bag %d" % e.bag
+		if not e.is_empty() and e.alive and float(e.talk) > 0.03:
+			st += "  )))"
+		lines.append([str(m.name) + st, Shop.suit_color(Shop.clean_look(m.get("look", {})).suit)])
+	hud.set_roster(lines, ("ROOM %s   " % Net.code) + ("MIC OFF" if Net.voice.muted else ("MIC" if Net.voice.mic_ok() else "")))
 
 
 # ================================================================ frame
 
 func _unhandled_input(e: InputEvent) -> void:
-	if mode == "client" and state == "play":
-		for k in EMOTES:
-			if e.is_action_pressed("emote%d" % k):
-				_emote_pressed(k)
-		if e.is_action_pressed("mute"):
-			_toggle_mic()
+	if state == "play" and local.alive and not local.through and ui == "":
+		if e.is_action_pressed("use"):
+			_use()
+		elif e.is_action_pressed("drop"):
+			_drop()
+		if mode == "client":
+			for k in EMOTES:
+				if e.is_action_pressed("emote%d" % k):
+					_emote_pressed(k)
+			if e.is_action_pressed("mute"):
+				_toggle_mic()
+	if e.is_action_pressed("ui_cancel") and ui != "" and ui != "title":
+		_close_ui()
 	if mode == "client" and spectating and e is InputEventMouseButton and e.pressed:
 		_next_spec()
 	if not (e is InputEventMouseButton and e.pressed):
 		return
 	match state:
-		"title":
-			if not Net.online and menu == "":
-				_start()
 		"play":
-			if not touch and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
+			if not touch and ui == "" and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
 				Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 				get_tree().paused = false
 				hud.paused_label.visible = false
-		"dead", "won":
-			if mode == "solo" and state_t > 1.5:
-				get_tree().paused = false
-				if state == "won":
-					Run.level = level + 1 if level < Eras.COUNT else 1
-				Run.autostart = true
-				get_tree().reload_current_scene()
+		"card":
+			if mode == "solo" and state_t > 2.5:
+				_back_to_hub()
+
+
+func _back_to_hub() -> void:
+	get_tree().paused = false
+	Run.level = 0
+	Run.autostart = true
+	get_tree().reload_current_scene()
 
 
 func _process(dt: float) -> void:
@@ -1259,48 +1460,44 @@ func _process(dt: float) -> void:
 	emote_cool -= dt
 	if state == "play":
 		_play_tick(dt)
-	elif state == "dead":
-		if mode == "client":
-			_dead_client(dt)
-		else:
-			_dead_solo(dt)
-	elif state == "through" and state_t > 2.0 and not spectating:
+	elif state == "dead" and mode == "client":
+		_dead_client(dt)
+	elif state == "through" and state_t > 2.0 and not spectating and mode == "client":
 		_spectate()
-	elif state == "won":
-		hud.white = minf(1.0, state_t * 0.8)
-		amb.volume_db = -6.0 - state_t * 12.0
-		rain.volume_db = -15.0 - state_t * 12.0
-		if state_t > 1.6:
-			hud.white = 0.0
-			hud.glitch = 0.0
-			hud.show_card("NOCLIP", "you slipped through the layer", win_text, win_foot)
+	elif state == "card" and mode == "solo":
+		_solo_card(dt)
 	if mode == "client":
-		if state != "won":
-			hud.white = maxf(0.0, hud.white - dt * 0.7)
+		hud.white = maxf(0.0, hud.white - dt * 0.7)
 		if spectating:
 			_spec_tick(dt)
 		_voice_tick()
 		_roster_tick(dt)
-	if flags.has("die") and state == "play" and state_t > 1.0:
+	elif state != "card":
+		hud.white = maxf(0.0, hud.white - dt * 0.7)
+	if flags.has("die") and state == "play" and state_t > 1.0 and mill:
 		flags.erase("die")
 		_kill(local, mill.head_pos())
-	if flags.has("win") and state == "play" and state_t > 1.0:
-		flags.erase("win")
-		_win()
 
 
-func _dead_solo(dt: float) -> void:
-	hud.glitch = minf(1.0, hud.glitch + dt * 2.0) if state_t < 1.9 else 0.15
-	if state_t > 0.9 and state_t - dt <= 0.9:
-		sfx.stream = sounds.death
-		sfx.play()
-		amb.stop()
-		rain.stop()
-	if state_t > 0.9:
-		hud.static_amt = minf(1.0, (state_t - 0.9) * 3.0)
-	if state_t > 1.9:
-		hud.static_amt = 0.4
-		hud.show_card("SIGNAL LOST", "", "the tape ends at %s" % hud.tc.text, "tap to rewind" if touch else "click to rewind", 0.6)
+## Solo: the rift's white-out or the tape's static, then the haul.
+func _solo_card(dt: float) -> void:
+	if local.through:
+		hud.white = maxf(0.0, 1.0 - state_t * 0.6)
+	else:
+		hud.glitch = minf(1.0, hud.glitch + dt * 2.0) if state_t < 1.9 else 0.15
+		if state_t > 0.9 and state_t - dt <= 0.9:
+			sfx.stream = sounds.death
+			sfx.play()
+			amb.stop()
+			rain.stop()
+		if state_t > 0.9:
+			hud.static_amt = minf(1.0, (state_t - 0.9) * 3.0) if state_t < 1.9 else 0.4
+	if state_t > 1.9 and state_t - dt <= 1.9:
+		var foot := ("tap" if touch else "click") + " to go back to the hub"
+		if local.through:
+			hud.show_card("HAUL  " + Run.cash(end_haul), "you made it home", era.title + "  -  " + Run.clock(elapsed), foot, 0.85)
+		else:
+			hud.show_card("SIGNAL LOST", "the haul is still out there", era.title, foot, 0.6)
 
 
 ## Co-op death: the grab, a burst of static, then you watch your friends.
@@ -1344,7 +1541,6 @@ func _spec_tick(dt: float) -> void:
 	var k := 1.0 - exp(-dt * 10.0)
 	spec_cam.global_position = spec_cam.global_position.lerp(av.eye() - av.look_dir() * 0.3, k)
 	spec_cam.rotation = Vector3(av.pitch, av.yaw, 0.0)
-	# their lamp is your lamp now
 	hud.glitch = 0.08
 
 
@@ -1355,10 +1551,32 @@ func _play_tick(dt: float) -> void:
 		var others := ""
 		for pid in avatars:
 			others += " | %s at %.1f,%.1f" % [avatars[pid].pname, avatars[pid].position.x, avatars[pid].position.z]
-		print("pos %.1f,%.1f yaw %.2f  hunter %s%s" % [local.position.x, local.position.z, local.yaw,
-			mill.state + (" seen %.2f" % mill.seen if mill is Gorgon else ""), others])
+		print("pos %.1f,%.1f yaw %.2f  bag %d haul %d%s%s" % [local.position.x, local.position.z, local.yaw, local.bag.size(), haul,
+			("  hunter " + mill.state) if mill else "", others])
 	hud.clock = elapsed
 	hud.set_battery(local.battery, local.light.visible)
+	_find_target()
+	if target_loot:
+		hud.prompt(("GRAB" if touch else "E  grab") + "  %s   %s" % [target_loot.item_name, Run.cash(target_loot.value)])
+	elif target_spot != "":
+		hud.prompt(("USE" if touch else "E") + "  " + {"console": "TIME CONSOLE", "shop": "SHOP"}[target_spot])
+	elif local.bag.size() >= Player.BAG_MAX and not hub:
+		hud.prompt("bag full  -  G to drop" if not touch else "bag full")
+	else:
+		hud.prompt("")
+	if local.touch:
+		local.touch.use_label = "GRAB" if target_loot else ("USE" if target_spot != "" else "")
+		local.touch.can_drop = not local.bag.is_empty() and not hub
+	if mode == "client" and flags.has("emote") and emote_cool <= -2.0:
+		_emote_pressed(int(flags.emote))
+	if hub:
+		# dev: the host drops the crew in once enough have arrived (autostart=LEVEL,PLAYERS)
+		if mode == "client" and flags.has("autostart") and Net.host_id == my_id and state_t > 3.0:
+			var parts := str(flags.autostart).split(",")
+			if Net.members.size() >= (int(parts[1]) if parts.size() > 1 else 2):
+				flags.erase("autostart")
+				Net.start_level(int(parts[0]))
+		return
 	var d := 999.0
 	var hunted := 0.0
 	for m in hunters:
@@ -1371,15 +1589,6 @@ func _play_tick(dt: float) -> void:
 	local.fear = lerpf(local.fear, maxf(near, hunted * 0.7), 1.0 - exp(-dt * 1.5))
 	# the frogs go quiet when it's close
 	amb.volume_db = lerpf(amb.volume_db, lerpf(era.loops[0][1], -30.0, local.fear), 1.0 - exp(-dt * 1.2))
-	if mode == "client":
-		_film_preview(dt)
-		if flags.has("emote") and emote_cool <= -2.0:  # dev: emote on repeat
-			_emote_pressed(int(flags.emote))
-	if not exit_node.on and exit_node.near_door():
-		door_hint -= dt
-		if door_hint <= 0.0:
-			door_hint = 12.0
-			hud.say([["it's dark.  your shot list isn't finished.", 4.0]])
 	# the swamp is never quite silent
 	next_event -= dt
 	if next_event <= 0.0:
@@ -1388,33 +1597,9 @@ func _play_tick(dt: float) -> void:
 	if flags.has("attract"):
 		local.rotation.y = local.yaw
 		local.head.rotation.x = local.pitch
-	if mode == "solo" and not flags.has("play") and not touch and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
+	if mode == "solo" and ui == "" and not flags.has("play") and not touch and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
 		get_tree().paused = true
 		hud.paused_label.visible = true
-
-
-## Client: the viewfinder brackets are drawn locally; the server decides
-## when a shot is actually done.
-func _film_preview(dt: float) -> void:
-	var best: Dictionary = {}
-	for sh in shots:
-		if sh.done:
-			continue
-		for pt in _film_points(sh.id):
-			if _framed(local.cam, pt, sh.range, local):
-				best = sh
-				break
-		if not best.is_empty():
-			break
-	for sh in shots:
-		if sh != best:
-			sh.prog = maxf(0.0, sh.prog - dt * 0.5)
-	if best.is_empty():
-		hud.focus_name = ""
-		return
-	best.prog = minf(best.prog + dt, best.need)
-	hud.focus_name = best.name
-	hud.focus_prog = clampf(best.prog / best.need, 0.0, 1.0)
 
 
 func _distant_event() -> void:
@@ -1430,14 +1615,11 @@ func _distant_event() -> void:
 	p.finished.connect(p.queue_free)
 
 
-## Every finished shot pulls the dark in closer. (What it does to the hunters
-## is the authority's business, in _film_for.)
-func _escalate(live: bool) -> void:
-	var n := 0
-	for sh in shots:
-		if sh.done:
-			n += 1
-	var k := n / float(shots.size())
+## Every egg taken pulls the dark in closer.
+func _escalate() -> void:
+	if env == null or nest_total == 0:
+		return
+	var k := clampf(float(nest_taken) / nest_total, 0.0, 1.0)
 	var base: Color = era.fog
 	var fog := base.lerp(base * 0.5, k)
 	fog.a = 1.0
@@ -1445,11 +1627,3 @@ func _escalate(live: bool) -> void:
 	env.background_color = fog
 	env.ambient_light_energy = lerpf(era.ambient_energy, era.ambient_energy * 0.45, k)
 	sun.light_energy = lerpf(era.sun_energy, era.sun_energy * 0.3, k)
-	if n == shots.size():
-		exit_node.activate()
-	if not live:
-		return
-	if n < shots.size():
-		hud.say([["SHOT %d / %d" % [n, shots.size()], 2.5], ["it's getting darker.", 3.5]])
-	else:
-		hud.say([["SHOT LIST COMPLETE", 3.0], ["somewhere, a light came on.", 4.0]])

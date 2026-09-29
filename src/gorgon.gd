@@ -98,6 +98,18 @@ func film_points() -> Array:
 	return [head_pos(), to_global(Vector3(0, 0.8, 0))]
 
 
+## Its nest was robbed: it comes looking, already half-sure.
+func alarm(at: Vector3) -> void:
+	if not active or feeding > 0.0:
+		return
+	last_seen = Vector3(at.x, 0, at.z)
+	seen = maxf(seen, 0.6)
+	state = "search"
+	timer = 14.0
+	target = last_seen
+	growl.play()
+
+
 func hear(_at: Vector3, _radius: float) -> void:
 	pass  # it doesn't
 

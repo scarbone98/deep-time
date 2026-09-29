@@ -658,41 +658,334 @@ static func dicynodon() -> ArrayMesh:
 
 # ---------------------------------------------------------------- people
 
-## A field researcher in a raincoat. Parts are built around their joints so
-## the avatar and the ragdoll can share them: legs and arms hang down -Y
-## from the hip/shoulder, the torso rises +Y from the hips, the head sits
-## on the neck. The right arm holds the camcorder up to the eye.
-static func person(coat: Color) -> Dictionary:
-	var skin := Color(0.72, 0.56, 0.44)
-	var pants := Color(0.16, 0.16, 0.18)
-	var boot := Color(0.08, 0.07, 0.06)
-	var mat := StandardMaterial3D.new()
-	mat.vertex_color_use_as_albedo = true
-	mat.roughness = 0.8
-	var st := begin()
-	tube(st, [Vector3(0, 0, 0), Vector3(0, 0.3, 0), Vector3(0, 0.6, 0)], [0.17, 0.2, 0.19], [coat.darkened(0.2), coat, coat], 7, false, 0.7)
-	box(st, Vector3(-0.2, -0.08, -0.12), Vector3(0.2, 0.05, 0.12), coat.darkened(0.3))
-	var torso := finish(st, mat)
-	st = begin()
-	tube(st, [Vector3(0, 0, 0), Vector3(0, 0.1, 0)], [0.05, 0.05], [skin, skin], 5)
-	tube(st, [Vector3(0, 0.08, 0.01), Vector3(0, 0.2, 0), Vector3(0, 0.3, 0.01)], [0.1, 0.12, 0.08], [skin, skin, skin], 7)
-	# the hood
-	tube(st, [Vector3(0, 0.06, 0.05), Vector3(0, 0.22, 0.04), Vector3(0, 0.34, 0.0)], [0.14, 0.15, 0.08], [coat, coat, coat.lightened(0.1)], 7)
+## A ball, as a stack of rings. sy squashes or stretches it vertically.
+static func ball(st: SurfaceTool, c: Vector3, r: float, col: Color, sy := 1.0, sides := 12, rings := 7, col2 := Color(-1, 0, 0)) -> void:
+	var pts := []
+	var rad := []
+	var cols := []
+	for i in rings + 1:
+		var a := PI * i / rings
+		pts.append(c + Vector3(0, -cos(a) * r * sy, 0))
+		rad.append(maxf(sin(a) * r, 0.001))
+		cols.append(col if col2.r < 0.0 else col.lerp(col2, float(i) / rings))
+	tube(st, pts, rad, cols, sides)
+
+
+static func _smooth_mat() -> StandardMaterial3D:
+	var m := StandardMaterial3D.new()
+	m.vertex_color_use_as_albedo = true
+	m.roughness = 0.55
+	return m
+
+
+static func _smooth() -> SurfaceTool:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	st.set_smooth_group(0)
+	return st
+
+
+## A chibi time-traveller: big round head, soft suit, stubby limbs, a time
+## pack on the back. Parts sit on their joints (see Avatar and Ragdoll):
+## legs hang from the hips, the body rises from the hips, the head sits on
+## the neck, arms hang from the shoulders. Sized for a 1.6 m eye line.
+static func chibi(suit: Color) -> Dictionary:
+	var skin := Color(0.98, 0.8, 0.66)
+	var boot := suit.darkened(0.55)
+	var mat := _smooth_mat()
+	var st := _smooth()
+	# body: a soft bean
+	tube(st, [Vector3(0, 0, 0), Vector3(0, 0.12, 0), Vector3(0, 0.3, 0), Vector3(0, 0.46, 0), Vector3(0, 0.56, 0)],
+		[0.2, 0.28, 0.29, 0.24, 0.12], [suit.darkened(0.15), suit, suit, suit.lightened(0.08), suit.lightened(0.1)], 14)
+	# belt and buckle
+	tube(st, [Vector3(0, 0.1, 0), Vector3(0, 0.15, 0)], [0.285, 0.29], [suit.darkened(0.45), suit.darkened(0.45)], 14)
+	ball(st, Vector3(0, 0.125, -0.29), 0.04, Color(1.0, 0.85, 0.3), 1.0, 8, 4)
+	# the time pack
+	var pack := Color(0.32, 0.34, 0.4)
+	box(st, Vector3(-0.17, 0.12, 0.2), Vector3(0.17, 0.46, 0.36), pack)
+	ball(st, Vector3(0, 0.3, 0.37), 0.07, Color(0.35, 0.95, 1.0), 1.0, 10, 5)
+	var body := finish(st, mat)
+	st = _smooth()
+	ball(st, Vector3(0, 0.34, 0), 0.38, skin, 0.94, 16, 10)
 	var head := finish(st, mat)
-	st = begin()
-	tube(st, [Vector3.ZERO, Vector3(0, -0.45, 0.02), Vector3(0, -0.84, 0)], [0.085, 0.075, 0.065], [pants, pants, pants], 6)
-	box(st, Vector3(-0.07, -0.92, -0.14), Vector3(0.07, -0.82, 0.07), boot)
+	# the face: big shiny eyes, blush, a little smile
+	st = _smooth()
+	for sd in [-1.0, 1.0]:
+		ball(st, Vector3(0.13 * sd, 0.36, -0.335), 0.065, Color(0.06, 0.05, 0.08), 1.25, 10, 6)
+		ball(st, Vector3(0.105 * sd, 0.4, -0.385), 0.02, Color(1, 1, 1), 1.0, 6, 3)
+		ball(st, Vector3(0.22 * sd, 0.26, -0.29), 0.05, Color(1.0, 0.55, 0.6), 0.55, 8, 4)
+	tube(st, [Vector3(-0.05, 0.25, -0.365), Vector3(0, 0.235, -0.37), Vector3(0.05, 0.25, -0.365)], [0.012, 0.012, 0.012],
+		[Color(0.35, 0.15, 0.15), Color(0.35, 0.15, 0.15), Color(0.35, 0.15, 0.15)], 5)
+	var face := finish(st, _unshaded())
+	st = _smooth()
+	tube(st, [Vector3(0, 0, 0), Vector3(0, -0.22, 0), Vector3(0, -0.36, 0)], [0.1, 0.09, 0.09], [suit, suit, suit.darkened(0.1)], 10)
+	ball(st, Vector3(0, -0.42, -0.04), 0.12, boot, 0.6, 10, 5)
 	var leg := finish(st, mat)
-	st = begin()
-	tube(st, [Vector3.ZERO, Vector3(0, -0.3, 0), Vector3(0, -0.56, 0)], [0.065, 0.055, 0.045], [coat, coat, coat.darkened(0.1)], 6)
-	tube(st, [Vector3(0, -0.56, 0), Vector3(0, -0.64, 0)], [0.045, 0.04], [skin, skin], 5)
+	st = _smooth()
+	tube(st, [Vector3(0, 0, 0), Vector3(0, -0.18, 0), Vector3(0, -0.3, 0)], [0.08, 0.075, 0.07], [suit, suit, suit], 10)
+	ball(st, Vector3(0, -0.34, 0), 0.08, Color(1, 1, 1), 1.0, 10, 5)
 	var arm := finish(st, mat)
-	# the camcorder, held at the end of the arm, lens pointing -Z
-	st = begin()
-	var body := Color(0.09, 0.09, 0.1)
-	box(st, Vector3(-0.05, -0.07, -0.14), Vector3(0.05, 0.05, 0.1), body)
-	tube(st, [Vector3(0, -0.01, -0.14), Vector3(0, -0.01, -0.22)], [0.04, 0.045], [body, body.lightened(0.2)], 7)
-	box(st, Vector3(0.05, -0.04, -0.06), Vector3(0.09, 0.03, 0.04), Color(0.2, 0.2, 0.22))
-	box(st, Vector3(-0.015, 0.05, -0.02), Vector3(0.015, 0.07, 0.0), Color(0.9, 0.1, 0.08))
+	st = _smooth()
+	var cb := Color(0.25, 0.25, 0.3)
+	box(st, Vector3(-0.06, -0.06, -0.12), Vector3(0.06, 0.06, 0.08), cb)
+	tube(st, [Vector3(0, 0, -0.12), Vector3(0, 0, -0.18)], [0.045, 0.05], [cb, Color(0.5, 0.8, 1.0)], 10)
+	ball(st, Vector3(0.03, 0.07, 0.0), 0.018, Color(1, 0.2, 0.2), 1.0, 6, 3)
 	var cam := finish(st, mat)
-	return {"torso": torso, "head": head, "leg": leg, "arm": arm, "cam": cam}
+	return {"body": body, "head": head, "face": face, "leg": leg, "arm": arm, "cam": cam}
+
+
+static func _unshaded() -> StandardMaterial3D:
+	var m := StandardMaterial3D.new()
+	m.vertex_color_use_as_albedo = true
+	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	return m
+
+
+## Hats sit on top of the head: origin is the crown, +Y up, forward -Z.
+static func hat(id: String) -> ArrayMesh:
+	if id == "" or id == "none":
+		return null
+	var st := _smooth()
+	match id:
+		"party":
+			var n := 6
+			for i in n:
+				var t0 := float(i) / n
+				var t1 := float(i + 1) / n
+				var c := Color(1.0, 0.35, 0.55) if i % 2 == 0 else Color(1.0, 0.85, 0.3)
+				tube(st, [Vector3(0, t0 * 0.42, 0), Vector3(0, t1 * 0.42, 0)], [lerpf(0.17, 0.01, t0), lerpf(0.17, 0.01, t1)], [c, c], 12)
+			ball(st, Vector3(0, 0.44, 0), 0.05, Color(0.4, 0.9, 1.0), 1.0, 8, 4)
+		"propeller":
+			ball(st, Vector3(0, -0.02, 0), 0.26, Color(0.3, 0.55, 1.0), 0.55, 14, 7)
+			box(st, Vector3(-0.2, -0.07, -0.34), Vector3(0.2, -0.04, -0.16), Color(1.0, 0.8, 0.2))
+			tube(st, [Vector3(0, 0.12, 0), Vector3(0, 0.2, 0)], [0.015, 0.015], [Color(0.8, 0.8, 0.8), Color(0.8, 0.8, 0.8)], 6)
+			box(st, Vector3(-0.28, 0.19, -0.03), Vector3(0.28, 0.21, 0.03), Color(1.0, 0.3, 0.3))
+			box(st, Vector3(-0.03, 0.19, -0.28), Vector3(0.03, 0.21, 0.28), Color(0.3, 0.9, 0.4))
+		"cowboy":
+			var c := Color(0.6, 0.4, 0.22)
+			tube(st, [Vector3(0, -0.05, 0), Vector3(0, -0.03, 0)], [0.42, 0.44], [c, c], 18)
+			tube(st, [Vector3(0, -0.04, 0), Vector3(0, 0.12, 0), Vector3(0, 0.2, 0)], [0.21, 0.2, 0.15], [c.darkened(0.1), c, c.lightened(0.1)], 14)
+			tube(st, [Vector3(0, 0.0, 0), Vector3(0, 0.04, 0)], [0.215, 0.215], [Color(0.3, 0.15, 0.1), Color(0.3, 0.15, 0.1)], 14)
+		"tophat":
+			var c := Color(0.12, 0.1, 0.14)
+			tube(st, [Vector3(0, -0.05, 0), Vector3(0, -0.03, 0)], [0.3, 0.31], [c, c], 18)
+			tube(st, [Vector3(0, -0.04, 0), Vector3(0, 0.36, 0)], [0.19, 0.2], [c, c], 16)
+			tube(st, [Vector3(0, 0.0, 0), Vector3(0, 0.06, 0)], [0.195, 0.197], [Color(0.8, 0.15, 0.2), Color(0.8, 0.15, 0.2)], 16)
+			ball(st, Vector3(0, 0.36, 0), 0.19, c, 0.02, 16, 3)
+		"dino":
+			var g := Color(0.35, 0.78, 0.35)
+			ball(st, Vector3(0, -0.06, 0.02), 0.34, g, 0.8, 16, 8)
+			for k in 5:
+				var z := -0.22 + k * 0.12
+				var y := 0.2 - absf(z) * 0.4
+				tube(st, [Vector3(0, y, z), Vector3(0, y + 0.14, z + 0.03)], [0.06, 0.005], [Color(1.0, 0.75, 0.2), Color(1.0, 0.9, 0.4)], 6)
+			for sd in [-1.0, 1.0]:
+				ball(st, Vector3(0.14 * sd, 0.1, -0.28), 0.06, Color(1, 1, 1), 1.0, 8, 4)
+				ball(st, Vector3(0.14 * sd, 0.1, -0.33), 0.03, Color(0.05, 0.05, 0.05), 1.0, 6, 3)
+		"crown":
+			var gold := Color(1.0, 0.8, 0.2)
+			tube(st, [Vector3(0, -0.02, 0), Vector3(0, 0.1, 0)], [0.2, 0.22], [gold.darkened(0.2), gold], 16)
+			for k in 6:
+				var a := TAU * k / 6.0
+				var o := Vector3(cos(a), 0, sin(a)) * 0.21
+				tube(st, [o + Vector3(0, 0.09, 0), o + Vector3(0, 0.24, 0)], [0.05, 0.005], [gold, gold.lightened(0.3)], 6)
+				ball(st, o + Vector3(0, 0.05, 0), 0.03, [Color(1, 0.2, 0.3), Color(0.3, 0.5, 1)][k % 2], 1.0, 6, 3)
+		"halo":
+			var y := Color(1.0, 0.95, 0.6)
+			for k in 20:
+				var a0 := TAU * k / 20.0
+				var a1 := TAU * (k + 1) / 20.0
+				tube(st, [Vector3(cos(a0) * 0.22, 0.2, sin(a0) * 0.22), Vector3(cos(a1) * 0.22, 0.2, sin(a1) * 0.22)], [0.025, 0.025], [y, y], 6)
+			return finish(st, _unshaded())
+		"beanie":
+			var c := Color(0.95, 0.45, 0.2)
+			ball(st, Vector3(0, -0.04, 0), 0.3, c, 0.75, 14, 7)
+			tube(st, [Vector3(0, -0.1, 0), Vector3(0, -0.02, 0)], [0.31, 0.3], [c.lightened(0.3), c.lightened(0.3)], 14)
+			ball(st, Vector3(0, 0.22, 0), 0.08, Color(1, 1, 1), 1.0, 8, 4)
+		_:
+			return null
+	return finish(st, _smooth_mat())
+
+
+## Face accessories, in head space (head centre at y 0.34).
+static func face_gear(id: String) -> ArrayMesh:
+	if id == "" or id == "none":
+		return null
+	var st := _smooth()
+	match id:
+		"glasses":
+			var c := Color(0.2, 0.15, 0.1)
+			for sd in [-1.0, 1.0]:
+				for k in 12:
+					var a0 := TAU * k / 12.0
+					var a1 := TAU * (k + 1) / 12.0
+					var o := Vector3(0.13 * sd, 0.36, -0.37)
+					tube(st, [o + Vector3(cos(a0), sin(a0), 0) * 0.085, o + Vector3(cos(a1), sin(a1), 0) * 0.085], [0.012, 0.012], [c, c], 4)
+			tube(st, [Vector3(-0.045, 0.37, -0.38), Vector3(0.045, 0.37, -0.38)], [0.01, 0.01], [c, c], 4)
+		"shades":
+			var c := Color(0.05, 0.05, 0.07)
+			box(st, Vector3(-0.24, 0.32, -0.4), Vector3(0.24, 0.42, -0.36), c)
+			box(st, Vector3(-0.25, 0.39, -0.37), Vector3(0.25, 0.42, 0.05), c)
+		"mustache":
+			var c := Color(0.3, 0.18, 0.1)
+			for sd in [-1.0, 1.0]:
+				tube(st, [Vector3(0, 0.28, -0.37), Vector3(0.07 * sd, 0.275, -0.37), Vector3(0.13 * sd, 0.3, -0.34)], [0.03, 0.03, 0.01], [c, c, c], 6)
+		"mask":
+			var c := Color(0.95, 0.95, 0.95)
+			ball(st, Vector3(0, 0.24, -0.3), 0.14, c, 0.7, 12, 6)
+		_:
+			return null
+	return finish(st, _smooth_mat())
+
+
+# ---------------------------------------------------------------- loot
+
+static func _glow_mat() -> StandardMaterial3D:
+	var m := StandardMaterial3D.new()
+	m.vertex_color_use_as_albedo = true
+	m.roughness = 0.35
+	m.emission_enabled = true
+	m.emission = Color(1, 0.95, 0.8)
+	m.emission_energy_multiplier = 0.12
+	return m
+
+
+static func loot(id: String) -> ArrayMesh:
+	var st := _smooth()
+	match id:
+		"arthro_egg", "scuto_egg", "dicy_egg":
+			var base := {"arthro_egg": Color(0.75, 0.68, 0.5), "scuto_egg": Color(0.92, 0.88, 0.78), "dicy_egg": Color(0.8, 0.72, 0.62)}[id] as Color
+			var size := {"arthro_egg": 0.16, "scuto_egg": 0.2, "dicy_egg": 0.13}[id] as float
+			ball(st, Vector3(0, size * 1.3, 0), size, base, 1.3, 12, 8, base.lightened(0.15))
+			var r := RandomNumberGenerator.new()
+			r.seed = id.hash()
+			for k in 10:
+				var a := r.randf() * TAU
+				var y := r.randf_range(0.4, 2.0) * size
+				var rr := sqrt(maxf(0.0, 1.0 - pow((y - size * 1.3) / (size * 1.3), 2.0))) * size
+				ball(st, Vector3(cos(a) * rr, y, sin(a) * rr), size * 0.12, base.darkened(0.45), 0.6, 6, 3)
+		"eryops_spawn":
+			var r := RandomNumberGenerator.new()
+			r.seed = 7
+			for k in 14:
+				var p := Vector3(r.randf_range(-0.14, 0.14), r.randf_range(0.04, 0.16), r.randf_range(-0.14, 0.14))
+				ball(st, p, 0.05, Color(0.55, 0.8, 0.45), 1.0, 8, 4)
+				ball(st, p + Vector3(0, 0, -0.02), 0.015, Color(0.05, 0.08, 0.05), 1.0, 5, 3)
+		"amber":
+			octa(st, Vector3(0, 0.12, 0), 0.12, Color(1.0, 0.6, 0.12))
+			octa(st, Vector3(0.05, 0.1, 0.02), 0.07, Color(0.95, 0.5, 0.1))
+			octa(st, Vector3(0, 0.12, -0.02), 0.025, Color(0.1, 0.07, 0.03))
+		"wing":
+			var c := Color(0.8, 0.85, 0.9)
+			var pts := [Vector3(0, 0.03, -0.02), Vector3(0.12, 0.03, -0.05), Vector3(0.34, 0.03, -0.04), Vector3(0.42, 0.03, 0.0),
+				Vector3(0.34, 0.03, 0.04), Vector3(0.12, 0.03, 0.05), Vector3(0, 0.03, 0.02)]
+			for k in range(1, pts.size() - 1):
+				tri(st, pts[0], pts[k], pts[k + 1], c)
+			tube(st, [Vector3(0, 0.035, 0), Vector3(0.4, 0.035, 0)], [0.006, 0.003], [Color(0.2, 0.2, 0.2), Color(0.2, 0.2, 0.2)], 3)
+		"cone":
+			var c := Color(0.45, 0.32, 0.18)
+			tube(st, [Vector3(0, 0.02, 0), Vector3(0, 0.12, 0), Vector3(0, 0.28, 0)], [0.07, 0.08, 0.02], [c.darkened(0.2), c, c.lightened(0.1)], 8, true)
+		"tooth":
+			var c := Color(0.95, 0.92, 0.82)
+			tube(st, [Vector3(0, 0.02, 0), Vector3(0.02, 0.14, 0), Vector3(0.07, 0.3, 0)], [0.05, 0.035, 0.004], [c.darkened(0.2), c, c], 8)
+		"leaf":
+			box(st, Vector3(-0.14, 0.0, -0.1), Vector3(0.14, 0.05, 0.1), Color(0.55, 0.5, 0.45))
+			var g := Color(0.3, 0.3, 0.2)
+			for k in 3:
+				tri(st, Vector3(-0.08 + k * 0.06, 0.055, 0.07), Vector3(-0.1 + k * 0.06, 0.055, -0.06), Vector3(-0.05 + k * 0.06, 0.055, -0.07), g)
+		_:
+			ball(st, Vector3(0, 0.1, 0), 0.1, Color(1, 0, 1))
+	return finish(st, _glow_mat())
+
+
+# ---------------------------------------------------------------- the Chrono Hub
+
+## The station deck: a disc of tiles with glowing seams and a rail.
+static func hub_deck(radius: float) -> ArrayMesh:
+	var st := _smooth()
+	var rings := 6
+	var seg := 48
+	for r in rings:
+		var r0 := radius * r / rings
+		var r1 := radius * (r + 1) / rings
+		for k in seg:
+			var a0 := TAU * k / seg
+			var a1 := TAU * (k + 1) / seg
+			var c := Color(0.42, 0.45, 0.66) if (r + k / 6) % 2 == 0 else Color(0.5, 0.53, 0.76)
+			if r == 1:
+				c = Color(0.6, 0.45, 0.8)
+			quad(st, Vector3(cos(a0) * r1, 0, sin(a0) * r1), Vector3(cos(a1) * r1, 0, sin(a1) * r1),
+				Vector3(cos(a1) * r0, 0, sin(a1) * r0), Vector3(cos(a0) * r0, 0, sin(a0) * r0), c, c)
+	# underside and the rim
+	for k in seg:
+		var a0 := TAU * k / seg
+		var a1 := TAU * (k + 1) / seg
+		var c := Color(0.12, 0.12, 0.2)
+		quad(st, Vector3(cos(a0), 0, sin(a0)) * radius, Vector3(cos(a1), 0, sin(a1)) * radius,
+			Vector3(cos(a1) * radius * 0.6, -3.0, sin(a1) * radius * 0.6), Vector3(cos(a0) * radius * 0.6, -3.0, sin(a0) * radius * 0.6), c, c.darkened(0.5))
+		# rail posts
+		if k % 3 == 0:
+			var p := Vector3(cos(a0), 0, sin(a0)) * (radius - 0.2)
+			tube(st, [p, p + Vector3(0, 1.0, 0)], [0.04, 0.04], [Color(0.7, 0.72, 0.85), Color(0.7, 0.72, 0.85)], 6)
+	for k in seg:
+		var a0 := TAU * k / seg
+		var a1 := TAU * (k + 1) / seg
+		var c := Color(0.75, 0.78, 0.95)
+		tube(st, [Vector3(cos(a0), 0, sin(a0)) * (radius - 0.2) + Vector3(0, 1.0, 0), Vector3(cos(a1), 0, sin(a1)) * (radius - 0.2) + Vector3(0, 1.0, 0)], [0.05, 0.05], [c, c], 6)
+	return finish(st, _smooth_mat())
+
+
+## Glowing seams on the deck, unshaded so they read as light.
+static func hub_lines(radius: float) -> ArrayMesh:
+	var st := _smooth()
+	var seg := 64
+	for rr in [radius * 2.0 / 6.0, radius * 4.0 / 6.0, radius - 0.5]:
+		for k in seg:
+			var a0 := TAU * k / seg
+			var a1 := TAU * (k + 1) / seg
+			var c := Color(0.4, 0.95, 1.0)
+			var w := 0.05
+			quad(st, Vector3(cos(a0) * (rr - w), 0.01, sin(a0) * (rr - w)), Vector3(cos(a1) * (rr - w), 0.01, sin(a1) * (rr - w)),
+				Vector3(cos(a1) * (rr + w), 0.01, sin(a1) * (rr + w)), Vector3(cos(a0) * (rr + w), 0.01, sin(a0) * (rr + w)), c, c)
+	return finish(st, _unshaded())
+
+
+## The time ring: a big upright torus of alternating segments.
+static func time_ring(radius: float, thick: float) -> ArrayMesh:
+	var st := _smooth()
+	var seg := 36
+	for k in seg:
+		var a0 := TAU * k / seg
+		var a1 := TAU * (k + 1) / seg
+		var c := Color(0.85, 0.75, 0.35) if k % 3 == 0 else Color(0.55, 0.58, 0.72)
+		tube(st, [Vector3(cos(a0) * radius, sin(a0) * radius, 0), Vector3(cos(a1) * radius, sin(a1) * radius, 0)], [thick, thick], [c, c], 8)
+	# clock marks
+	for k in 12:
+		var a := TAU * k / 12.0
+		ball(st, Vector3(cos(a), sin(a), 0) * radius + Vector3(0, 0, -thick), thick * 0.5, Color(0.4, 0.95, 1.0), 1.0, 8, 4)
+	return finish(st, _smooth_mat())
+
+
+static func console_mesh() -> ArrayMesh:
+	var st := _smooth()
+	var c := Color(0.35, 0.38, 0.55)
+	tube(st, [Vector3(0, 0, 0), Vector3(0, 0.9, 0)], [0.45, 0.3], [c.darkened(0.2), c], 12)
+	box(st, Vector3(-0.6, 0.9, -0.35), Vector3(0.6, 1.0, 0.35), c.lightened(0.1))
+	for k in 5:
+		ball(st, Vector3(-0.4 + k * 0.2, 1.02, 0.2), 0.04, [Color(1, 0.3, 0.3), Color(1, 0.8, 0.2), Color(0.3, 1, 0.4), Color(0.3, 0.7, 1), Color(0.9, 0.4, 1)][k], 1.0, 8, 4)
+	return finish(st, _smooth_mat())
+
+
+static func kiosk_mesh() -> ArrayMesh:
+	var st := _smooth()
+	var wood := Color(0.55, 0.38, 0.28)
+	box(st, Vector3(-1.2, 0, -0.5), Vector3(1.2, 1.0, 0.5), wood)
+	box(st, Vector3(-1.25, 1.0, -0.55), Vector3(1.25, 1.08, 0.55), wood.lightened(0.2))
+	for sd in [-1.0, 1.0]:
+		tube(st, [Vector3(1.15 * sd, 1.0, 0.4), Vector3(1.15 * sd, 2.6, 0.4)], [0.05, 0.05], [Color(0.8, 0.8, 0.85), Color(0.8, 0.8, 0.85)], 6)
+	# striped awning
+	for k in 8:
+		var x0 := -1.35 + k * 0.3375
+		var c := Color(1.0, 0.45, 0.6) if k % 2 == 0 else Color(1, 1, 1)
+		quad(st, Vector3(x0, 2.6, 0.5), Vector3(x0 + 0.3375, 2.6, 0.5), Vector3(x0 + 0.3375, 2.3, -0.7), Vector3(x0, 2.3, -0.7), c, c)
+	return finish(st, _smooth_mat())

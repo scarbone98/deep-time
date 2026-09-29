@@ -724,27 +724,26 @@ func _close_ui() -> void:
 func _console() -> void:
 	_open("console")
 	var host := mode == "solo" or Net.host_id == Net.my_id
-	var lines := []
+	hud.show_card("TIME CONSOLE", ("ROOM  %s  -  " % Net.code if mode == "client" else "") + "where to?", "", "", 0.88)
+	var items := []
+	# one row per era: the drop button, then a one-line pitch
 	for n in range(1, Eras.COUNT + 1):
 		var e := Eras.get_era(n)
-		var best := ("   best haul " + Run.cash(int(Run.best[n]))) if Run.best.has(n) else ""
-		lines.append("%d  %s%s\n%s" % [n, e.title, best, e.blurb])
-	hud.show_card("TIME CONSOLE", ("ROOM  %s" % Net.code) if mode == "client" else "where to?", "\n\n".join(lines), "", 0.88)
-	var items := []
-	if host:
-		var row := []
-		for n in range(1, Eras.COUNT + 1):
-			row.append({"type": "button", "text": "DROP INTO %d" % n, "cb": _drop_into.bind(n)})
+		var best := ("  (best " + Run.cash(int(Run.best[n])) + ")") if Run.best.has(n) else ""
+		var line := "%s%s  -  %s" % [e.title, best, String(e.blurb).split("\n")[0]]
+		var row := [{"type": "label", "text": line}]
+		if host:
+			row.push_front({"type": "button", "text": "DROP IN", "cb": _drop_into.bind(n), "width": 90})
 		items.append({"type": "row", "items": row})
-	else:
+	if not host:
 		items.append({"type": "label", "text": "%s drives the console" % Net.members.get(Net.host_id, {}).get("name", "the host")})
+	var bottom := [{"type": "button", "text": "CLOSE  (Esc)", "cb": _close_ui, "width": 120}]
 	if mode == "client":
-		items.append({"type": "button", "text": "LEAVE ROOM", "cb": func() -> void: Net.leave()})
+		bottom.append({"type": "button", "text": "LEAVE ROOM", "cb": func() -> void: Net.leave(), "width": 120})
 	else:
-		items.append({"type": "button", "text": "PLAY WITH FRIENDS", "cb": _coop_menu})
-	items.append({"type": "button", "text": "CLOSE", "cb": _close_ui})
+		bottom.append({"type": "button", "text": "PLAY WITH FRIENDS", "cb": _coop_menu, "width": 150})
+	items.append({"type": "row", "items": bottom})
 	hud.show_menu(items)
-
 
 func _drop_into(n: int) -> void:
 	if mode == "client":
@@ -1908,6 +1907,10 @@ func _unhandled_input(e: InputEvent) -> void:
 		Run.sens = clampf(Run.sens + (0.1 if e.is_action_pressed("sens_up") else -0.1), 0.2, 3.0)
 		Run.save()
 		hud.say([["look sensitivity  %.1f   ( [ and ] )" % Run.sens, 1.5]])
+	if e.is_action_pressed("use") and (ui == "console" or ui == "shop"):
+		_close_ui()
+		get_viewport().set_input_as_handled()
+		return
 	if e.is_action_pressed("ui_cancel") and ui != "" and ui != "title":
 		_close_ui()
 	if mode == "client" and spectating and e is InputEventMouseButton and e.pressed:

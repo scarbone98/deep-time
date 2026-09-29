@@ -222,7 +222,7 @@ func _menu_item(it: Dictionary) -> Control:
 			var b := Button.new()
 			b.text = it.text
 			b.add_theme_font_size_override("font_size", 13)
-			b.custom_minimum_size = Vector2(170, 0)
+			b.custom_minimum_size = Vector2(it.get("width", 170), 0)
 			b.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 			b.pressed.connect(it.cb)
 			return b

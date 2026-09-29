@@ -41,7 +41,7 @@ Inostrancevia hunts by sight: keep rock between you. Loot:
 **PLAY WITH FRIENDS** (on the title card or at the console): host a room and share its 4-letter code, or join one. The crew meets in the hub, sees each other's outfits, and the host drives the time console.
 
 - **Server authoritative.** One headless Godot process (`-- server port=N`, the same project exported with the "Server" preset) hosts every room. Each room runs the real level (`main.gd` in `server` mode) inside its own SubViewport, so each room gets its own physics world.
-  - The server owns every player's position, every creature, shots, deaths and the door. Clients send only input (30 Hz); they predict their own movement and reconcile it against 20 Hz snapshots.
+  - The server owns every player's position, every creature, the loot, deaths and the rift. Clients send only input (30 Hz); they predict their own movement and reconcile it against 20 Hz snapshots.
   - Creatures are puppets on clients. Levels are built from the room's seed, so every creature list lines up by index. See `src/net.gd`.
 - A drop ends when nobody is left in the era, whether they're home or caught. Then everyone returns to the hub and gets paid.
 - **Proximity voice.** Browser WebRTC (Opus, echo cancellation), signalled through the game server and placed in 3D at each speaker's head, with a camcorder band-pass (`src/voice.gd`).
@@ -73,7 +73,7 @@ Phone (portrait or landscape): left thumb is a floating stick (drag past the rin
 ```
 
 Dev flags are a URL query on web, or `-- key=value` on desktop:
-`play` (skip title), `seed=N`, `mill=D` + `mturn=rad` (spawn it D m ahead), `exit` (start by the door), `light`, `fly`, `freeze`, `yaw=` / `pitch=` (degrees), `die`, `win`, `touch`, `debug` (logs position and yaw), `shots=N` (first N shots done), `near=eryops|scorp|scuto|dicy` + `neard=m` (start beside one), `level=N`, `attract` + `ts=` (cabinet video scene; see tools/record_attract.mjs).
+`play` (skip title), `level=N` (0 is the hub), `seed=N`, `mill=D` + `mturn=rad` (spawn it D m ahead), `exit` (start by the rift), `loot=N` (start by loot #N), `give=N,N` (start carrying them), `money=N`, `shop` / `console` (open that panel), `light`, `fly`, `freeze`, `yaw=` / `pitch=` (degrees), `die`, `touch`, `debug`, `near=eryops|scorp|scuto|dicy` + `neard=m`, `attract` + `ts=` (cabinet video scene; see tools/record_attract.mjs). Co-op: `autostart=LEVEL,PLAYERS`, `bot`, `emote=N`. Flags only apply to the first load.
 
 Screenshots: serve `build/web` on :8792, then run `node tools/shot.mjs "?play&seed=42" out.png 12000`. Playwright must be resolvable.
 

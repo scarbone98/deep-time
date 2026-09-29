@@ -167,8 +167,8 @@ func activate() -> void:
 	hum.play()
 
 
-func inside() -> bool:
-	var l := to_local(player.global_position)
+func inside(p: Player = null) -> bool:
+	var l := to_local((p if p else player).global_position)
 	return absf(l.x) < 0.5 and absf(l.z) < 0.3
 
 
@@ -194,5 +194,7 @@ func _process(dt: float) -> void:
 	light.light_energy = 1.5 * on
 	panel_mat.emission_energy_multiplier = 2.5 * on
 	hum.volume_db = 0.0 if on > 0.5 else -8.0
+	if player == null:
+		return
 	var d := global_position.distance_to(player.global_position)
 	glow_mat.albedo_color.a = clampf((d - 10.0) / 40.0, 0.0, 1.0) * 0.28 * on

@@ -5,7 +5,16 @@ extends RefCounted
 const RATE := 22050
 
 
+static var _cache: Dictionary
+
+
 static func all() -> Dictionary:
+	if _cache.is_empty():
+		_cache = _make()
+	return _cache
+
+
+static func _make() -> Dictionary:
 	return {
 		"hum": hum(),
 		"skitter": skitter(),
@@ -19,6 +28,8 @@ static func all() -> Dictionary:
 		"crack": crack(),
 		"call": distant_call(),
 		"beep": beep(),
+		"scream": scream(),
+		"flash": flash(),
 		"growl": growl(),
 		"roar": roar(),
 		"croak": croak(),
@@ -276,4 +287,47 @@ static func roar() -> AudioStreamWAV:
 		var env := minf(t / 0.08, 1.0) * exp(-t * 1.4)
 		var v := sin(ph) + 0.6 * sin(ph * 2.03) + 0.4 * sin(ph * 3.1) + lp * 2.0
 		s[i] = clampf(v * 1.8, -1.0, 1.0) * env * 0.7
+	return _wav(s)
+
+
+## A human scream through a cheap camcorder mic: a sawtooth voice with
+## wobble, pushed through two vowel formants and clipped.
+static func scream() -> AudioStreamWAV:
+	var r := RandomNumberGenerator.new()
+	var s := _buf(1.4)
+	var ph := 0.0
+	var b1 := [0.0, 0.0]
+	var b2 := [0.0, 0.0]
+	for i in s.size():
+		var t := float(i) / RATE
+		var f := 420.0 + 120.0 * sin(PI * minf(t / 1.4, 1.0)) + 18.0 * sin(TAU * 6.0 * t) + r.randf_range(-6.0, 6.0)
+		ph = fmod(ph + f / RATE, 1.0)
+		var src := ph * 2.0 - 1.0 + r.randf_range(-0.2, 0.2)
+		var a := _formant(src, 900.0, b1) * 1.2 + _formant(src, 1500.0, b2)
+		var env := minf(t / 0.05, 1.0) * clampf((1.4 - t) / 0.3, 0.0, 1.0)
+		s[i] = clampf(a * 2.5, -1.0, 1.0) * env * 0.55
+	return _wav(s)
+
+
+## Two-pole resonator. `z` holds the filter's memory between samples.
+static func _formant(x: float, f: float, z: Array) -> float:
+	var w := TAU * f / RATE
+	var q := 0.93
+	var y: float = x * (1.0 - q) + 2.0 * q * cos(w) * float(z[0]) - q * q * float(z[1])
+	z[1] = z[0]
+	z[0] = y
+	return y
+
+
+## An old camera flash: a click, then the capacitor whine climbing.
+static func flash() -> AudioStreamWAV:
+	var r := RandomNumberGenerator.new()
+	var s := _buf(1.0)
+	var ph := 0.0
+	for i in s.size():
+		var t := float(i) / RATE
+		var click := r.randf_range(-1.0, 1.0) * exp(-t * 90.0)
+		ph += TAU * lerpf(2200.0, 7200.0, minf(t / 0.9, 1.0)) / RATE
+		var whine := sin(ph) * 0.12 * minf(t / 0.1, 1.0) * clampf((1.0 - t) / 0.2, 0.0, 1.0)
+		s[i] = click * 0.8 + whine
 	return _wav(s)

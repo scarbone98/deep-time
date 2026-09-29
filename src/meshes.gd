@@ -654,3 +654,45 @@ static func dicynodon() -> ArrayMesh:
 		for z in [-0.25, 0.25]:
 			tube(st, [Vector3(0.18 * sd, 0.12, z), Vector3(0.28 * sd, 0.0, z - 0.05), Vector3(0.3 * sd, -0.05, z - 0.1)], [0.06, 0.05, 0.03], [hide, hide, hide.darkened(0.2)], 4)
 	return finish(st, chitin())
+
+
+# ---------------------------------------------------------------- people
+
+## A field researcher in a raincoat. Parts are built around their joints so
+## the avatar and the ragdoll can share them: legs and arms hang down -Y
+## from the hip/shoulder, the torso rises +Y from the hips, the head sits
+## on the neck. The right arm holds the camcorder up to the eye.
+static func person(coat: Color) -> Dictionary:
+	var skin := Color(0.72, 0.56, 0.44)
+	var pants := Color(0.16, 0.16, 0.18)
+	var boot := Color(0.08, 0.07, 0.06)
+	var mat := StandardMaterial3D.new()
+	mat.vertex_color_use_as_albedo = true
+	mat.roughness = 0.8
+	var st := begin()
+	tube(st, [Vector3(0, 0, 0), Vector3(0, 0.3, 0), Vector3(0, 0.6, 0)], [0.17, 0.2, 0.19], [coat.darkened(0.2), coat, coat], 7, false, 0.7)
+	box(st, Vector3(-0.2, -0.08, -0.12), Vector3(0.2, 0.05, 0.12), coat.darkened(0.3))
+	var torso := finish(st, mat)
+	st = begin()
+	tube(st, [Vector3(0, 0, 0), Vector3(0, 0.1, 0)], [0.05, 0.05], [skin, skin], 5)
+	tube(st, [Vector3(0, 0.08, 0.01), Vector3(0, 0.2, 0), Vector3(0, 0.3, 0.01)], [0.1, 0.12, 0.08], [skin, skin, skin], 7)
+	# the hood
+	tube(st, [Vector3(0, 0.06, 0.05), Vector3(0, 0.22, 0.04), Vector3(0, 0.34, 0.0)], [0.14, 0.15, 0.08], [coat, coat, coat.lightened(0.1)], 7)
+	var head := finish(st, mat)
+	st = begin()
+	tube(st, [Vector3.ZERO, Vector3(0, -0.45, 0.02), Vector3(0, -0.84, 0)], [0.085, 0.075, 0.065], [pants, pants, pants], 6)
+	box(st, Vector3(-0.07, -0.92, -0.14), Vector3(0.07, -0.82, 0.07), boot)
+	var leg := finish(st, mat)
+	st = begin()
+	tube(st, [Vector3.ZERO, Vector3(0, -0.3, 0), Vector3(0, -0.56, 0)], [0.065, 0.055, 0.045], [coat, coat, coat.darkened(0.1)], 6)
+	tube(st, [Vector3(0, -0.56, 0), Vector3(0, -0.64, 0)], [0.045, 0.04], [skin, skin], 5)
+	var arm := finish(st, mat)
+	# the camcorder, held at the end of the arm, lens pointing -Z
+	st = begin()
+	var body := Color(0.09, 0.09, 0.1)
+	box(st, Vector3(-0.05, -0.07, -0.14), Vector3(0.05, 0.05, 0.1), body)
+	tube(st, [Vector3(0, -0.01, -0.14), Vector3(0, -0.01, -0.22)], [0.04, 0.045], [body, body.lightened(0.2)], 7)
+	box(st, Vector3(0.05, -0.04, -0.06), Vector3(0.09, 0.03, 0.04), Color(0.2, 0.2, 0.22))
+	box(st, Vector3(-0.015, 0.05, -0.02), Vector3(0.015, 0.07, 0.0), Color(0.9, 0.1, 0.08))
+	var cam := finish(st, mat)
+	return {"torso": torso, "head": head, "leg": leg, "arm": arm, "cam": cam}

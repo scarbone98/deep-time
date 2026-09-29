@@ -45,9 +45,32 @@ Red dunes and dry washes, sandstone outcrops, Glossopteris trees, and bones. The
 
 Every mesh is procedural (`src/meshes.gd`). The creature and effect sounds are synthesized at load time (`src/synth.gd`). The swamp ambience is two CC0 field recordings; see `audio/CREDITS.md`.
 
+## Co-op (up to 4, server authoritative)
+
+**PLAY WITH FRIENDS** on the title card: host a room and share its 4-letter code, or join one. The host picks the level.
+
+- **Server authoritative.** One headless Godot process (`-- server port=N`, the same project exported with the "Server" preset) hosts every room. Each room runs the real level (`main.gd` in `server` mode) inside its own SubViewport, so each room gets its own physics world.
+  - The server owns every player's position, every creature, shots, deaths and the door. Clients send only input (30 Hz); they predict their own movement and reconcile it against 20 Hz snapshots.
+  - Creatures are puppets on clients. Levels are built from the room's seed, so every creature list lines up by index. See `src/net.gd`.
+- **Everyone films their own shot list.** The first finished list wakes the second hunter. Each player has to get through the door; the level ends when nobody is left inside. Anyone through means the crew goes deeper.
+- **Proximity voice.** Browser WebRTC (Opus, echo cancellation), signalled through the game server and placed in 3D at each speaker's head, with a camcorder band-pass (`src/voice.gd`).
+  - **Talking is noise:** the millipede hears you.
+  - The living can't hear the dead; the dead hear everyone.
+- **Ragdolls and spectating.** Caught players flop, then watch a living friend's tape (click or tap to switch).
+- **Emotes:** 1 wave, 2 point, 3 scream (loud, so it carries), 4 camera flash (whites out anyone you catch in the face). M mutes the mic. On phones they're the EMOTE and MIC buttons.
+
+### Running the server
+
+```sh
+godot4 --headless --path . -- server port=8910      # local
+./tools/deploy_server.sh                            # Fly.io (app deep-time-coop, see server/fly.toml)
+```
+
+The web build connects to `wss://deep-time-coop.fly.dev` by default. Override it with `?server=ws://127.0.0.1:8910`. Dev shortcuts: `?host=NAME&code=ABCD&autostart=2`, `?join=ABCD&name=NAME`. `tools/coop_test.mjs` drives two browsers (with fake mics) against a local server.
+
 ## Controls
 
-Desktop: WASD move · mouse look · Shift run · C / Ctrl crouch · F lamp · Esc pause
+Desktop: WASD move · mouse look · Shift run · C / Ctrl crouch · F lamp · Esc pause · co-op: 1-4 emotes, M mute
 
 Phone (portrait or landscape): left thumb is a floating stick (drag past the ring to run) · right thumb looks · LAMP and CROUCH buttons. Touch mode turns on automatically on touchscreens; force it with `?touch`.
 

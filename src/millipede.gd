@@ -3,7 +3,7 @@ extends Node3D
 ## Arthropleura, scaled up. Blind: it hunts by the vibration of footsteps.
 ## Stand still or crouch-walk and it loses you. Run and it knows exactly where you are.
 
-signal caught
+signal caught(victim: Player)
 signal alerted
 
 const N := 22
@@ -12,7 +12,11 @@ const SP := 0.28 * S
 const RIDE := 0.17 * S
 
 var world: World
+var session: Node
 var player: Player
+var puppet := false
+var feeding := 0.0
+var net_head := Vector3.ZERO
 var pos: Array[Vector3] = []
 var nodes: Array[Node3D] = []
 var legs: Array = []
@@ -36,9 +40,9 @@ var hiss: AudioStreamPlayer3D
 var rng := RandomNumberGenerator.new()
 
 
-func setup(w: World, p: Player, s: Dictionary, start: Vector3, facing: Vector3) -> void:
+func setup(w: World, sess: Node, s: Dictionary, start: Vector3, facing: Vector3) -> void:
 	world = w
-	player = p
+	session = sess
 	rng.randomize()
 	var mat := Meshes.chitin()
 	var seg := Meshes.mill_segment(mat)
@@ -84,6 +88,7 @@ func setup(w: World, p: Player, s: Dictionary, start: Vector3, facing: Vector3) 
 	hiss.max_distance = 90.0
 	nodes[0].add_child(hiss)
 	target = start + dir * 10.0
+	net_head = pos[0]
 	_pose()
 
 
@@ -104,11 +109,54 @@ func film_points() -> Array:
 	return [pos[0] + Vector3(0, 0.3, 0), pos[N / 2] + Vector3(0, 0.3, 0)]
 
 
+const STATES := ["roam", "investigate", "search", "hunt"]
+
+
+func net_get(out: PackedFloat32Array) -> void:
+	out.append_array([pos[0].x, pos[0].y, pos[0].z, dir.x, dir.z, speed, STATES.find(state), rear])
+
+
+func net_set(a: PackedFloat32Array, i: int) -> int:
+	net_head = Vector3(a[i], a[i + 1], a[i + 2])
+	var d := Vector3(a[i + 3], 0, a[i + 4])
+	if d.length() > 0.01:
+		dir = d.normalized()
+	speed = a[i + 5]
+	var st: String = STATES[clampi(int(a[i + 6]), 0, 3)]
+	if st == "hunt" and state != "hunt":
+		hiss.play()
+	state = st
+	rear = a[i + 7]
+	return i + 8
+
+
+func _puppet(dt: float) -> void:
+	t += dt
+	if net_head.distance_to(pos[0]) > 6.0:
+		pos[0] = net_head
+	pos[0] = pos[0].lerp(net_head, 1.0 - exp(-dt * 10.0))
+	_follow()
+	gait += speed * dt * 7.0
+	skitter.volume_db = linear_to_db(clampf(speed / 5.0, 0.12, 1.0)) + 3.0
+	skitter.pitch_scale = 0.75 + speed * 0.09
+	_pose()
+
+
 func _physics_process(dt: float) -> void:
+	if puppet:
+		_puppet(dt)
+		return
 	if not active:
 		return
 	t += dt
-	_think(dt)
+	player = session.nearest_player(pos[0])
+	if feeding > 0.0:
+		feeding -= dt
+		want_speed = 0.0
+	if player == null:
+		want_speed = 0.0
+	else:
+		_think(dt)
 	var p0 := pos[0]
 	var to := target - p0
 	to.y = 0.0
@@ -138,6 +186,15 @@ func _physics_process(dt: float) -> void:
 	p0 += dir * speed * dt
 	p0.y = world.height_at(p0.x, p0.z) + RIDE
 	pos[0] = p0
+	_follow()
+	gait += speed * dt * 7.0
+	rear = lerpf(rear, 0.55 if state == "search" else 0.0, 1.0 - exp(-dt * 2.0))
+	skitter.volume_db = linear_to_db(clampf(speed / 5.0, 0.12, 1.0)) + 3.0
+	skitter.pitch_scale = 0.75 + speed * 0.09
+	_pose()
+
+
+func _follow() -> void:
 	for i in range(1, N):
 		var d: Vector3 = pos[i] - pos[i - 1]
 		d.y = 0.0
@@ -146,11 +203,6 @@ func _physics_process(dt: float) -> void:
 		var q: Vector3 = pos[i - 1] + d.normalized() * SP
 		q.y = world.height_at(q.x, q.z) + RIDE
 		pos[i] = q
-	gait += speed * dt * 7.0
-	rear = lerpf(rear, 0.55 if state == "search" else 0.0, 1.0 - exp(-dt * 2.0))
-	skitter.volume_db = linear_to_db(clampf(speed / 5.0, 0.12, 1.0)) + 3.0
-	skitter.pitch_scale = 0.75 + speed * 0.09
-	_pose()
 
 
 func _pose() -> void:
@@ -183,13 +235,14 @@ func _dist2(a: Vector3, b: Vector3) -> float:
 func _think(dt: float) -> void:
 	var pp := player.global_position
 	var d := _dist2(pp, pos[0])
-	if player.alive and not hear_off:
+	if player.alive and not hear_off and feeding <= 0.0:
 		var feel := 3.2 if player.moving else 1.7
 		if d < feel:
 			_hunt(pp)
-		if d < 1.3:
-			active = false
-			caught.emit()
+		if d < 1.3 and feeding <= 0.0:
+			caught.emit(player)
+			feeding = 3.0
+			_pick_roam()
 			return
 	var arrive := _dist2(target, pos[0]) < 1.5
 	match state:
@@ -242,7 +295,7 @@ func _pick_roam() -> void:
 	var a := rng.randf() * TAU
 	var off := Vector3(cos(a), 0, sin(a))
 	# it drifts your way more often than chance would say
-	if rng.randf() < drift:
+	if rng.randf() < drift and player:
 		target = player.global_position + off * rng.randf_range(15.0, 32.0)
 	else:
 		target = pos[0] + off * rng.randf_range(15.0, 40.0)
@@ -252,7 +305,7 @@ func _pick_roam() -> void:
 
 
 func hear(at: Vector3, radius: float) -> void:
-	if not active or hear_off:
+	if not active or hear_off or feeding > 0.0:
 		return
 	var d := _dist2(at, pos[0])
 	if d > radius:

@@ -4,12 +4,14 @@ extends Node3D
 ## fallen logs. Come too close and it rattles and raises its tail. Still close
 ## when the rattle ends? It strikes.
 
-signal struck
+signal struck(victim: Player)
 
 const WARN_AT := 4.5
 const STRIKE_AT := 3.6
 
+var session: Node
 var player: Player
+var puppet := false
 var state := "idle"
 var timer := 0.0
 var t := 0.0
@@ -23,8 +25,8 @@ var rattle: AudioStreamPlayer3D
 var home := Vector3.ZERO
 
 
-func setup(p: Player, s: Dictionary, at: Vector3, yaw: float) -> void:
-	player = p
+func setup(sess: Node, s: Dictionary, at: Vector3, yaw: float) -> void:
+	session = sess
 	position = at
 	home = at
 	rotation.y = yaw
@@ -64,13 +66,37 @@ func film_point() -> Vector3:
 	return global_position + Vector3(0, 0.45, 0)
 
 
+const STATES := ["idle", "warn", "strike"]
+
+
+func net_get(out: PackedFloat32Array) -> void:
+	out.append_array([rotation.y, STATES.find(state), lunge])
+
+
+func net_set(a: PackedFloat32Array, i: int) -> int:
+	rotation.y = a[i]
+	var st: String = STATES[clampi(int(a[i + 1]), 0, 2)]
+	if st == "warn" and state != "warn":
+		rattle.play()
+	state = st
+	lunge = a[i + 2]
+	return i + 3
+
+
 func _process(dt: float) -> void:
+	if puppet:
+		t += dt
+		_animate(dt)
+		return
 	if not active:
 		return
 	t += dt
+	player = session.nearest_player(global_position)
+	if player == null:
+		_animate(dt)
+		return
 	var to := player.global_position - global_position
 	var d := Vector2(to.x, to.z).length()
-	var want_curl := 0.45
 	match state:
 		"idle":
 			if player.alive and d < WARN_AT:
@@ -78,7 +104,6 @@ func _process(dt: float) -> void:
 				timer = 1.3
 				rattle.play()
 		"warn":
-			want_curl = 0.62
 			timer -= dt
 			rotation.y = lerp_angle(rotation.y, atan2(-to.x, -to.z), 1.0 - exp(-dt * 6.0))
 			if timer <= 0.0:
@@ -88,12 +113,25 @@ func _process(dt: float) -> void:
 				else:
 					state = "idle"
 		"strike":
-			want_curl = 0.3
 			timer -= dt
 			lunge = minf(1.0, lunge + dt * 6.0)
 			if timer <= 0.2 and not hit:
 				hit = true
-				struck.emit()
+				if d < STRIKE_AT + 1.0:
+					struck.emit(player)
+			if timer <= -1.5:
+				state = "idle"
+				hit = false
+				lunge = 0.0
+	_animate(dt)
+
+
+func _animate(dt: float) -> void:
+	var want_curl := 0.45
+	if state == "warn":
+		want_curl = 0.62
+	elif state == "strike":
+		want_curl = 0.3
 	curl = lerpf(curl, want_curl, 1.0 - exp(-dt * 8.0))
 	var sway := sin(t * (9.0 if state == "warn" else 0.7)) * (0.1 if state == "warn" else 0.02)
 	for i in tail.size():

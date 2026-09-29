@@ -3,6 +3,8 @@ extends Node3D
 ## A Scutosaurus in a loose herd, drifting and grazing. Harmless. Loud.
 
 var world: World
+var puppet := false
+var net_pos := Vector3.ZERO
 var herd: Dictionary  # shared {"center": Vector3, "goal": Vector3}
 var offset := Vector3.ZERO
 var dir := Vector3.FORWARD
@@ -59,7 +61,35 @@ func film_point() -> Vector3:
 	return to_global(Vector3(0, 0.9, 0))
 
 
+func net_get(out: PackedFloat32Array) -> void:
+	out.append_array([position.x, position.y, position.z, dir.x, dir.z, speed])
+
+
+func net_set(a: PackedFloat32Array, i: int) -> int:
+	net_pos = Vector3(a[i], a[i + 1], a[i + 2])
+	var d := Vector3(a[i + 3], 0, a[i + 4])
+	if d.length() > 0.01:
+		dir = d.normalized()
+	speed = a[i + 5]
+	return i + 6
+
+
 func _physics_process(dt: float) -> void:
+	if puppet:
+		t += dt
+		if net_pos.distance_to(position) > 8.0:
+			position = net_pos
+		position = position.lerp(net_pos, 1.0 - exp(-dt * 8.0))
+		rotation.y = lerp_angle(rotation.y, atan2(-dir.x, -dir.z), 1.0 - exp(-dt * 6.0))
+		gait += speed * dt * 3.0
+		for k in legs.size():
+			legs[k].rotation.x = sin(gait + (0.0 if k in [0, 3] else PI)) * 0.35 * clampf(speed, 0.0, 1.0)
+		next_call -= dt
+		if next_call <= 0.0:
+			next_call = rng.randf_range(12.0, 30.0)
+			call_.pitch_scale = rng.randf_range(0.45, 0.6)
+			call_.play()
+		return
 	if not active:
 		return
 	t += dt

@@ -1,3 +1,4 @@
 build/
 .godot/
 *.png.import
+server/deeptime.x86_64

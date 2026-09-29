@@ -481,3 +481,20 @@ func clear_line(a: Vector3, b: Vector3) -> bool:
 	q.collide_with_areas = false
 	var hit := get_world_3d().direct_space_state.intersect_ray(q)
 	return hit.is_empty() or not (hit.collider == _colliders)
+
+
+## Just the ground, for ragdolls to land on. Its own layer, so the player
+## (who walks on height_at, not physics) never touches it.
+func ground_collider() -> void:
+	var hm := HeightMapShape3D.new()
+	hm.map_width = N + 1
+	hm.map_depth = N + 1
+	hm.map_data = heights
+	var body := StaticBody3D.new()
+	body.collision_layer = 1 << 7
+	body.collision_mask = 0
+	var cs := CollisionShape3D.new()
+	cs.shape = hm
+	cs.scale = Vector3(STEP, 1.0, STEP)
+	body.add_child(cs)
+	add_child(body)

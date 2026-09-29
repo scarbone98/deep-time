@@ -9,6 +9,7 @@ static var level := 1
 static var autostart := false
 static var unlocked := 1
 static var best := {}
+static var player_name := ""
 static var _loaded := false
 
 
@@ -20,12 +21,14 @@ static func load_save() -> void:
 	if c.load(PATH) == OK:
 		unlocked = int(c.get_value("run", "unlocked", 1))
 		best = c.get_value("run", "best", {})
+		player_name = str(c.get_value("run", "name", ""))
 
 
 static func save() -> void:
 	var c := ConfigFile.new()
 	c.set_value("run", "unlocked", unlocked)
 	c.set_value("run", "best", best)
+	c.set_value("run", "name", player_name)
 	c.save(PATH)
 
 

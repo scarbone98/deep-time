@@ -35,11 +35,26 @@ var heart: AudioStreamPlayer
 var dying := 0.0
 var death_at := Vector3.ZERO
 var touch: TouchPad
+var id := 1
+var view := true  # this machine looks through its camera
+var input_mode := "local"  # local: keyboard/touch; net: from a client packet
+var net_move := Vector2.ZERO
+var net_sprint := false
+var net_crouch := false
+var net_light := false
+var talk := 0.0  # microphone level, 0..1: talking is noise too
+var talk_noise := 0.0
+var seq := 0
+var through := false
+var last_move := Vector2.ZERO
+var last_sprint := false
+var bot := false  # dev: walk in circles
 
 
-func setup(w: World, s: Dictionary) -> void:
+func setup(w: World, s: Dictionary, is_view := true) -> void:
 	world = w
 	sounds = s
+	view = is_view
 	motion_mode = CharacterBody3D.MOTION_MODE_FLOATING
 	var col := CollisionShape3D.new()
 	var cap := CapsuleShape3D.new()
@@ -55,7 +70,7 @@ func setup(w: World, s: Dictionary) -> void:
 	cam.fov = 72.0
 	cam.near = 0.05
 	cam.far = 160.0
-	cam.current = true
+	cam.current = is_view
 	head.add_child(cam)
 	light = SpotLight3D.new()
 	light.spot_range = 34.0
@@ -81,12 +96,13 @@ func _audio(stream: AudioStream, db: float) -> AudioStreamPlayer:
 
 func begin() -> void:
 	control = true
-	breath.play()
-	heart.play()
+	if view:
+		breath.play()
+		heart.play()
 
 
 func _unhandled_input(e: InputEvent) -> void:
-	if not control:
+	if not control or input_mode != "local":
 		return
 	if e is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		look(e.relative * 0.0022)
@@ -114,13 +130,25 @@ func _physics_process(dt: float) -> void:
 	var inp := Vector2.ZERO
 	var sprint := false
 	if control:
-		inp = Input.get_vector("left", "right", "fwd", "back")
-		crouching = Input.is_action_pressed("crouch")
-		sprint = Input.is_action_pressed("sprint")
-		if touch:
-			inp = (inp + touch.move).limit_length(1.0)
-			crouching = crouching or touch.crouch
-			sprint = sprint or touch.run
+		if input_mode == "net":
+			inp = net_move.limit_length(1.0)
+			crouching = net_crouch
+			sprint = net_sprint
+			if net_light != light.visible and (battery > 0.0 or not net_light):
+				light.visible = net_light
+		else:
+			inp = Input.get_vector("left", "right", "fwd", "back")
+			crouching = Input.is_action_pressed("crouch")
+			sprint = Input.is_action_pressed("sprint")
+			if bot:
+				inp = Vector2(0, -1)
+				yaw += dt * 0.35
+			if touch:
+				inp = (inp + touch.move).limit_length(1.0)
+				crouching = crouching or touch.crouch
+				sprint = sprint or touch.run
+		last_move = inp
+		last_sprint = sprint
 	var depth := maxf(0.0, -world.height_at(position.x, position.z))
 	var running := sprint and inp.length() > 0.2 and not crouching and not exhausted
 	var spd := WALK
@@ -165,6 +193,13 @@ func _physics_process(dt: float) -> void:
 			breath_noise = 1.6
 			noise.emit(global_position, 4.5)
 
+	# talking carries: a quiet mutter a few metres, a shout much further
+	if talk > 0.04 and alive:
+		talk_noise -= dt
+		if talk_noise <= 0.0:
+			talk_noise = 0.5
+			noise.emit(global_position, lerpf(6.0, 18.0, clampf((talk - 0.04) * 8.0, 0.0, 1.0)))
+
 	heart.volume_db = linear_to_db(fear * 0.9 + 0.0001)
 	heart.pitch_scale = 0.85 + fear * 0.6
 
@@ -203,11 +238,25 @@ func _step(depth: float, running: bool) -> void:
 	var wet := depth > 0.05
 	if wet:
 		r *= 1.5
+	noise.emit(global_position, r)
+	if not view:
+		return
 	step_sfx.stream = sounds.splash if wet else sounds.step
 	step_sfx.pitch_scale = randf_range(0.85, 1.15)
 	step_sfx.volume_db = -16.0 if crouching else (-2.0 if running else -8.0)
 	step_sfx.play()
-	noise.emit(global_position, r)
+
+
+## Gone from the world for this level (dead or through the door): no
+## collisions, no noise, nothing for anything to find.
+func vanish() -> void:
+	control = false
+	moving = false
+	velocity = Vector3.ZERO
+	collision_layer = 0
+	collision_mask = 0
+	light.visible = false
+	breath.stop()
 
 
 func die(at: Vector3) -> void:

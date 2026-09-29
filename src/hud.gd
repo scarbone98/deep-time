@@ -30,6 +30,12 @@ var focus_name := ""
 var focus_prog := 0.0
 var flash := 0.0
 var stage_box: HBoxContainer
+var menu_box: VBoxContainer
+var menu_fields := {}
+var status_label: Label
+var roster_box: VBoxContainer
+var mic_label: Label
+var spec_label: Label
 
 
 func _ready() -> void:
@@ -60,6 +66,24 @@ func _ready() -> void:
 	date.offset_left = -320
 	date.offset_right = -20
 	date.offset_top = -36
+	roster_box = VBoxContainer.new()
+	roster_box.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+	roster_box.offset_left = -220
+	roster_box.offset_right = -20
+	roster_box.offset_top = 40
+	roster_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	roster_box.add_theme_constant_override("separation", 0)
+	osd.add_child(roster_box)
+	mic_label = _label(osd, "", 11, Vector2.ZERO)
+	mic_label.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
+	mic_label.offset_left = 20
+	mic_label.offset_top = -54
+	spec_label = _label(osd, "", 13, Vector2.ZERO)
+	spec_label.set_anchors_preset(Control.PRESET_CENTER_TOP)
+	spec_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	spec_label.offset_left = -250
+	spec_label.offset_right = 250
+	spec_label.offset_top = 40
 	shot_label = _label(osd, "", 11, Vector2(20, 40))
 	shot_label.modulate = Color(1, 1, 1, 0.85)
 	focus = Control.new()
@@ -100,6 +124,11 @@ func _ready() -> void:
 	stage_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	stage_box.add_theme_constant_override("separation", 14)
 	box.add_child(stage_box)
+	menu_box = VBoxContainer.new()
+	menu_box.alignment = BoxContainer.ALIGNMENT_CENTER
+	menu_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	menu_box.add_theme_constant_override("separation", 4)
+	box.add_child(menu_box)
 	for l in [card_title, card_sub, card_body, card_foot]:
 		l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	card_sub.modulate = Color(0.9, 0.8, 0.5)
@@ -140,6 +169,92 @@ func show_stages(stages: Array, pick: Callable) -> void:
 		b.add_theme_color_override("font_disabled_color", Color(0.4, 0.4, 0.38))
 		b.pressed.connect(pick.bind(int(st.n)))
 		stage_box.add_child(b)
+
+
+## A little form under the card: buttons, text fields, labels, rows of them.
+## Items: {"type": "button"|"edit"|"label"|"status"|"row", ...}.
+func show_menu(items: Array) -> void:
+	for c in menu_box.get_children():
+		c.queue_free()
+	menu_fields = {}
+	status_label = null
+	for it in items:
+		menu_box.add_child(_menu_item(it))
+
+
+func _menu_item(it: Dictionary) -> Control:
+	match str(it.type):
+		"button":
+			var b := Button.new()
+			b.text = it.text
+			b.add_theme_font_size_override("font_size", 13)
+			b.custom_minimum_size = Vector2(170, 0)
+			b.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+			b.pressed.connect(it.cb)
+			return b
+		"edit":
+			var e := LineEdit.new()
+			e.text = it.get("text", "")
+			e.placeholder_text = it.get("hint", "")
+			e.max_length = 12
+			e.alignment = HORIZONTAL_ALIGNMENT_CENTER
+			e.add_theme_font_size_override("font_size", 13)
+			e.custom_minimum_size = Vector2(it.get("width", 170), 0)
+			e.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+			menu_fields[it.id] = e
+			return e
+		"row":
+			var r := HBoxContainer.new()
+			r.alignment = BoxContainer.ALIGNMENT_CENTER
+			r.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			for sub in it.items:
+				r.add_child(_menu_item(sub))
+			return r
+		"status":
+			status_label = Label.new()
+			status_label.add_theme_font_size_override("font_size", 12)
+			status_label.modulate = Color(1, 0.8, 0.5)
+			status_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			return status_label
+	var l := Label.new()
+	l.text = str(it.get("text", ""))
+	l.add_theme_font_size_override("font_size", 12)
+	l.modulate = Color(0.8, 0.8, 0.75)
+	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	return l
+
+
+func menu_value(id: String) -> String:
+	var e: LineEdit = menu_fields.get(id)
+	return e.text if e else ""
+
+
+func status(t: String) -> void:
+	if status_label:
+		status_label.text = t
+
+
+func set_roster(lines: Array, mic: String) -> void:
+	while roster_box.get_child_count() < lines.size():
+		var l := Label.new()
+		l.add_theme_font_size_override("font_size", 11)
+		l.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+		l.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.8))
+		l.add_theme_constant_override("shadow_offset_x", 1)
+		l.add_theme_constant_override("shadow_offset_y", 1)
+		roster_box.add_child(l)
+	for k in roster_box.get_child_count():
+		var l: Label = roster_box.get_child(k)
+		l.visible = k < lines.size()
+		if l.visible:
+			l.text = lines[k][0]
+			l.modulate = (lines[k][1] as Color).lightened(0.25)
+	mic_label.text = mic
+
+
+func spec(who: String, touch: bool) -> void:
+	spec_label.text = "" if who == "" else "WATCHING %s'S TAPE   -   %s to switch" % [who, "tap" if touch else "click"]
 
 
 func set_shots(shots: Array) -> void:

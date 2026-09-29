@@ -5,13 +5,17 @@ extends Node3D
 ## and it charges faster than you can run. Break line of sight behind rock
 ## and it goes to where it last saw you, and searches.
 
-signal caught
+signal caught(victim: Player)
 signal alerted
 
 const SCALE := 1.25
 
 var world: World
+var session: Node
 var player: Player
+var puppet := false
+var feeding := 0.0
+var net_pos := Vector3.ZERO
 var dir := Vector3.FORWARD
 var speed := 0.0
 var want_speed := 1.6
@@ -37,9 +41,9 @@ var thud: AudioStreamPlayer3D
 var rng := RandomNumberGenerator.new()
 
 
-func setup(w: World, p: Player, s: Dictionary, at: Vector3, facing: Vector3) -> void:
+func setup(w: World, sess: Node, s: Dictionary, at: Vector3, facing: Vector3) -> void:
 	world = w
-	player = p
+	session = sess
 	rng.randomize()
 	dir = Vector3(facing.x, 0, facing.z).normalized()
 	position = Vector3(at.x, world.height_at(at.x, at.z), at.z)
@@ -64,6 +68,7 @@ func setup(w: World, p: Player, s: Dictionary, at: Vector3, facing: Vector3) -> 
 	roar = _audio(s.roar, 14.0, 140.0)
 	thud = _audio(s.step, 8.0, 50.0)
 	target = position + dir * 10.0
+	net_pos = position
 	_pose()
 
 
@@ -97,12 +102,58 @@ func hear(_at: Vector3, _radius: float) -> void:
 	pass  # it doesn't
 
 
+const STATES := ["prowl", "stalk", "charge", "search"]
+
+
+func net_get(out: PackedFloat32Array) -> void:
+	out.append_array([position.x, position.y, position.z, dir.x, dir.z, speed, STATES.find(state)])
+
+
+func net_set(a: PackedFloat32Array, i: int) -> int:
+	net_pos = Vector3(a[i], a[i + 1], a[i + 2])
+	var d := Vector3(a[i + 3], 0, a[i + 4])
+	if d.length() > 0.01:
+		dir = d.normalized()
+	speed = a[i + 5]
+	var st: String = STATES[clampi(int(a[i + 6]), 0, 3)]
+	if st != state:
+		if st == "stalk":
+			growl.play()
+		elif st == "charge":
+			roar.play()
+	state = st
+	return i + 7
+
+
+func _puppet(dt: float) -> void:
+	if net_pos.distance_to(position) > 8.0:
+		position = net_pos
+	position = position.lerp(net_pos, 1.0 - exp(-dt * 10.0))
+	var prev := gait
+	gait += speed * dt * 2.4
+	if state == "charge" and int(prev / PI) != int(gait / PI):
+		thud.pitch_scale = rng.randf_range(0.5, 0.65)
+		thud.play()
+	_pose()
+
+
 func _physics_process(dt: float) -> void:
+	if puppet:
+		_puppet(dt)
+		return
 	if not active:
 		return
 	t += dt
-	_look(dt)
-	_think(dt)
+	if feeding > 0.0:
+		feeding -= dt
+		want_speed = 0.0
+		seen = 0.0
+	else:
+		_look(dt)
+		if player == null:
+			want_speed = 0.0
+		else:
+			_think(dt)
 	var to := target - position
 	to.y = 0.0
 	var want := dir
@@ -148,22 +199,32 @@ func _physics_process(dt: float) -> void:
 	_pose()
 
 
+## Looks for everyone; locks on to the closest person it can see.
 func _look(dt: float) -> void:
 	sees = false
-	if not player.alive:
+	player = session.nearest_player(position)
+	if player == null:
 		return
 	var fwd := dir
 	var eye := position + Vector3(0, 1.1, 0) + fwd * 2.4
-	var pp := player.global_position + Vector3(0, 0.6 if player.crouching else 1.3, 0)
-	var to := pp - eye
-	var d := to.length()
+	var best := 1e9
 	var reach := 40.0
-	if player.light.visible:
-		reach = 75.0
-	if player.crouching:
-		reach *= 0.6
-	if d < reach and (fwd.dot(to / d) > cos(deg_to_rad(65.0)) or d < 7.0):
-		sees = world.clear_line(eye, pp)
+	var d := 0.0
+	var pp := Vector3.ZERO
+	for p: Player in session.alive_players():
+		var at: Vector3 = p.global_position + Vector3(0, 0.6 if p.crouching else 1.3, 0)
+		var to := at - eye
+		var dd := to.length()
+		var r := 75.0 if p.light.visible else 40.0
+		if p.crouching:
+			r *= 0.6
+		if dd < r and dd < best and (fwd.dot(to / dd) > cos(deg_to_rad(65.0)) or dd < 7.0) and world.clear_line(eye, at):
+			best = dd
+			sees = true
+			player = p
+			reach = r
+			d = dd
+			pp = at
 	if sees:
 		var rate := (0.2 + (1.0 - d / reach) * 1.3) * (1.4 if player.moving else 0.6)
 		if player.light.visible:
@@ -180,8 +241,9 @@ func _think(dt: float) -> void:
 	var pp := player.global_position
 	var d := Vector2(pp.x - position.x, pp.z - position.z).length()
 	if player.alive and d < 2.4 * SCALE * 0.9 and not hear_off:
-		active = false
-		caught.emit()
+		caught.emit(player)
+		feeding = 3.5
+		_pick_prowl()
 		return
 	var arrive := Vector2(target.x - position.x, target.z - position.z).length() < 2.0
 	match state:
@@ -231,7 +293,7 @@ func _pick_prowl() -> void:
 	timer = 25.0
 	var a := rng.randf() * TAU
 	var off := Vector3(cos(a), 0, sin(a))
-	if rng.randf() < drift:
+	if rng.randf() < drift and player:
 		target = player.global_position + off * rng.randf_range(20.0, 40.0)
 	else:
 		target = position + off * rng.randf_range(20.0, 45.0)

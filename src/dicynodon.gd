@@ -7,7 +7,8 @@ const OUT_Y := 0.0
 const IN_Y := -0.9
 
 var world: World
-var player: Player
+var session: Node
+var puppet := false
 var home := Vector3.ZERO
 var hidden := false
 var calm := 0.0
@@ -17,9 +18,9 @@ var squeak: AudioStreamPlayer3D
 var rng := RandomNumberGenerator.new()
 
 
-func setup(w: World, p: Player, s: Dictionary, mesh: Mesh, burrow: Vector3) -> void:
+func setup(w: World, sess: Node, s: Dictionary, mesh: Mesh, burrow: Vector3) -> void:
 	world = w
-	player = p
+	session = sess
 	rng.randomize()
 	home = burrow + Vector3(0, 0.08, 0)
 	position = home
@@ -49,13 +50,27 @@ func film_point() -> Vector3:
 	return global_position + Vector3(0, 0.35, 0)
 
 
+func net_get(out: PackedFloat32Array) -> void:
+	out.append_array([position.y, rotation.y, 1.0 if hidden else 0.0])
+
+
+func net_set(a: PackedFloat32Array, i: int) -> int:
+	position.y = lerpf(position.y, a[i], 0.5)
+	rotation.y = a[i + 1]
+	var h := a[i + 2] > 0.5
+	if h and not hidden:
+		squeak.play()
+	hidden = h
+	return i + 3
+
+
 func _process(dt: float) -> void:
-	if not active:
+	if puppet or not active:
 		return
 	t += dt
-	var d := Vector2(player.position.x - home.x, player.position.z - home.z).length()
 	var spooked := false
-	if player.alive:
+	for player: Player in session.alive_players():
+		var d := Vector2(player.position.x - home.x, player.position.z - home.z).length()
 		if player.moving and not player.crouching and d < 14.0:
 			spooked = true
 		if player.light.visible and d < 18.0:

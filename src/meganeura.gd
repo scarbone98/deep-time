@@ -4,7 +4,10 @@ extends Node3D
 ## They're drawn to the camcorder lamp, and their droning gives you away.
 
 var world: World
+var session: Node
 var player: Player
+var puppet := false
+var net_pos := Vector3.ZERO
 var vel := Vector3.ZERO
 var goal := Vector3.ZERO
 var home := Vector3.ZERO
@@ -19,9 +22,9 @@ var rng := RandomNumberGenerator.new()
 var on_noise: Callable
 
 
-func setup(w: World, p: Player, s: Dictionary, start: Vector3, noise_cb: Callable) -> void:
+func setup(w: World, sess: Node, s: Dictionary, start: Vector3, noise_cb: Callable) -> void:
 	world = w
-	player = p
+	session = sess
 	on_noise = noise_cb
 	rng.randomize()
 	t = rng.randf() * 10.0
@@ -57,11 +60,31 @@ func begin() -> void:
 	buzz.play()
 
 
+func net_get(out: PackedFloat32Array) -> void:
+	out.append_array([position.x, position.y, position.z, vel.x, vel.y, vel.z])
+
+
+func net_set(a: PackedFloat32Array, i: int) -> int:
+	net_pos = Vector3(a[i], a[i + 1], a[i + 2])
+	vel = Vector3(a[i + 3], a[i + 4], a[i + 5])
+	return i + 6
+
+
 func _process(dt: float) -> void:
+	if puppet:
+		t += dt
+		if net_pos.distance_to(position) > 10.0:
+			position = net_pos
+		position = position.lerp(net_pos + vel * 0.05, 1.0 - exp(-dt * 10.0))
+		_animate(dt)
+		return
 	if not active:
 		return
 	t += dt
 	rest -= dt
+	player = session.lit_player(position)
+	if player == null:
+		return
 	var pp := player.global_position
 	var lit := player.light.visible
 	var d := global_position.distance_to(pp)
@@ -86,6 +109,17 @@ func _process(dt: float) -> void:
 	vel += Vector3(sin(t * 7.1), sin(t * 5.3) * 0.6, cos(t * 6.7)) * dt * 3.0
 	global_position += vel * dt
 	global_position.y = maxf(global_position.y, world.height_at(global_position.x, global_position.z) + 0.8)
+	_animate(dt)
+	if lit and d < 6.0 and player.alive:
+		pester += dt
+		if pester > 2.0:
+			pester = 0.0
+			on_noise.call(pp, 15.0)
+	else:
+		pester = maxf(0.0, pester - dt)
+
+
+func _animate(dt: float) -> void:
 	var hv := Vector3(vel.x, 0, vel.z)
 	if hv.length() > 0.4:
 		body.rotation.y = lerp_angle(body.rotation.y, atan2(-hv.x, -hv.z), 1.0 - exp(-dt * 8.0))
@@ -94,10 +128,3 @@ func _process(dt: float) -> void:
 		var side := 1.0 if k % 2 == 0 else -1.0
 		wings[k].rotation.z = sin(t * 95.0 + (k / 2) * 1.6) * 0.6 * side
 	buzz.pitch_scale = 0.9 + minf(vel.length(), 10.0) * 0.03
-	if lit and d < 6.0 and player.alive:
-		pester += dt
-		if pester > 2.0:
-			pester = 0.0
-			on_noise.call(pp, 15.0)
-	else:
-		pester = maxf(0.0, pester - dt)

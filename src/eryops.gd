@@ -8,7 +8,8 @@ const SURFACE := -0.03
 const SUNK := -0.95
 
 var world: World
-var player: Player
+var puppet := false
+var net_pos := Vector3.ZERO
 var home := Vector3.ZERO
 var under := false
 var quiet := 0.0
@@ -22,9 +23,8 @@ var splash: AudioStreamPlayer3D
 var rng := RandomNumberGenerator.new()
 
 
-func setup(w: World, p: Player, s: Dictionary, at: Vector3) -> void:
+func setup(w: World, _sess: Node, s: Dictionary, at: Vector3) -> void:
 	world = w
-	player = p
 	rng.randomize()
 	home = Vector3(at.x, 0, at.z)
 	position = Vector3(at.x, SURFACE, at.z)
@@ -71,7 +71,31 @@ func hear(at: Vector3, radius: float) -> void:
 		quiet = rng.randf_range(6.0, 9.0)
 
 
+func net_get(out: PackedFloat32Array) -> void:
+	out.append_array([position.x, position.y, position.z, heading])
+
+
+func net_set(a: PackedFloat32Array, i: int) -> int:
+	var was_up := net_pos.y > SURFACE - 0.1
+	net_pos = Vector3(a[i], a[i + 1], a[i + 2])
+	heading = a[i + 3]
+	if was_up and net_pos.y < SURFACE - 0.2:
+		splash.pitch_scale = 0.6
+		splash.play()
+	return i + 4
+
+
 func _process(dt: float) -> void:
+	if puppet:
+		t += dt
+		position = position.lerp(net_pos, 1.0 - exp(-dt * 6.0))
+		rotation.y = lerp_angle(rotation.y, heading, 1.0 - exp(-dt * 6.0))
+		if position.y > SURFACE - 0.08:
+			next_croak -= dt
+			if next_croak <= 0.0:
+				next_croak = rng.randf_range(9.0, 18.0)
+				croak.play()
+		return
 	if not active:
 		return
 	t += dt

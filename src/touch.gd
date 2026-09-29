@@ -6,7 +6,12 @@ extends Control
 const R := 46.0
 const LOOK := 0.006
 
+signal emote(e: int)
+signal mic
+
 var player: Player
+var coop := false
+var emotes_open := false
 var move := Vector2.ZERO
 var run := false
 var crouch := false
@@ -25,10 +30,17 @@ func _ready() -> void:
 
 func _buttons() -> Dictionary:
 	var s := get_viewport_rect().size
-	return {
+	var b := {
 		"lamp": Vector2(s.x - 62, s.y - 190),
 		"crouch": Vector2(s.x - 62, s.y - 110),
 	}
+	if coop:
+		b["mic"] = Vector2(s.x - 136, s.y - 110)
+		b["emote"] = Vector2(s.x - 136, s.y - 190)
+		if emotes_open:
+			for k in 4:
+				b["e%d" % (k + 1)] = Vector2(s.x - 136, s.y - 190 - 62 * (k + 1))
+	return b
 
 
 func _input(e: InputEvent) -> void:
@@ -38,10 +50,21 @@ func _input(e: InputEvent) -> void:
 		var p: Vector2 = e.position
 		if e.pressed:
 			var b := _buttons()
-			if p.distance_to(b.lamp) < 34.0:
+			var hit := ""
+			for k in b:
+				if p.distance_to(b[k]) < 30.0:
+					hit = k
+			if hit == "lamp":
 				player.toggle_light()
-			elif p.distance_to(b.crouch) < 34.0:
+			elif hit == "crouch":
 				crouch = not crouch
+			elif hit == "mic":
+				mic.emit()
+			elif hit == "emote":
+				emotes_open = not emotes_open
+			elif hit.begins_with("e") and hit.length() == 2:
+				emote.emit(int(hit.substr(1)))
+				emotes_open = false
 			elif p.x < get_viewport_rect().size.x * 0.45 and stick_idx == -1:
 				stick_idx = e.index
 				origin = p
@@ -82,6 +105,13 @@ func _draw() -> void:
 	var b := _buttons()
 	_button(b.lamp, "LAMP", player.light.visible)
 	_button(b.crouch, "CROUCH", crouch)
+	if coop:
+		_button(b.mic, "MIC", not Net.voice.muted)
+		_button(b.emote, "EMOTE", emotes_open)
+		var names := ["WAVE", "POINT", "SCREAM", "FLASH"]
+		for k in 4:
+			if b.has("e%d" % (k + 1)):
+				_button(b["e%d" % (k + 1)], names[k], false)
 
 
 func _button(at: Vector2, label: String, on: bool) -> void:

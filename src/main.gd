@@ -699,9 +699,18 @@ func _input_map() -> void:
 			continue
 		InputMap.add_action(a)
 		for k in m[a]:
+			# by position (so WASD works on any layout) and by letter, in
+			# case the browser only reports one of them
 			var e := InputEventKey.new()
 			e.physical_keycode = k
 			InputMap.action_add_event(a, e)
+			var e2 := InputEventKey.new()
+			e2.keycode = k
+			InputMap.action_add_event(a, e2)
+	# right mouse also grabs / uses, like a second E
+	var rm := InputEventMouseButton.new()
+	rm.button_index = MOUSE_BUTTON_RIGHT
+	InputMap.action_add_event("use", rm)
 
 
 func _parse_flags() -> Dictionary:
@@ -839,6 +848,7 @@ func _open(name_: String) -> void:
 
 func _close_ui() -> void:
 	ui = ""
+	get_viewport().gui_release_focus()
 	hud.hide_card()
 	hud.show_menu([])
 	hud.show_stages([], Callable())
@@ -952,6 +962,7 @@ func _auto_coop() -> void:
 # ================================================================ starting
 
 func _start() -> void:
+	get_viewport().gui_release_focus()
 	state = "play"
 	state_t = 0.0
 	ui = ""

@@ -243,6 +243,13 @@ func _menu_item(it: Dictionary) -> Control:
 			e.custom_minimum_size = Vector2(it.get("width", 170), 0)
 			e.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 			menu_fields[it.id] = e
+			if OS.has_feature("web") and DisplayServer.is_touchscreen_available():
+				# no on-screen keyboard for a canvas: ask the browser instead
+				e.focus_entered.connect(func() -> void:
+					var v: Variant = JavaScriptBridge.eval("prompt(%s, %s)" % [JSON.stringify(str(it.get("hint", ""))), JSON.stringify(e.text)], true)
+					if v != null:
+						e.text = str(v).substr(0, 12)
+					e.release_focus())
 			return e
 		"row":
 			var r := HBoxContainer.new()

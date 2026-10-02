@@ -42,7 +42,7 @@ const GEAR := [
 	{"id": "scanner", "name": "SCANNER", "costs": [180], "about": "R: pings loot values and nearby creatures"},
 	{"id": "flash", "name": "STUN FLASH", "costs": [220], "about": "H: blinds every hunter that can see you. 3 charges a drop"},
 	{"id": "walkie", "name": "WALKIE-TALKIE", "costs": [80], "about": "talk to friends with walkies from anywhere (co-op)"},
-	{"id": "decoy", "name": "SQUEAKY DECOY", "costs": [35], "about": "Q: throw it; it squeaks and draws the hunter"},
+	{"id": "decoy", "name": "SQUEAKY DECOY", "costs": [35], "about": "COMMA: throw it; it squeaks and draws the hunter"},
 	{"id": "pack", "name": "BIGGER POCKETS", "costs": [250, 600], "about": "+1 hand slot per level"},
 	{"id": "battery", "name": "LONG-LIFE BATTERY", "costs": [200], "about": "the lamp lasts twice as long"},
 	{"id": "stabilizer", "name": "RIFT STABILIZER", "costs": [300, 700], "about": "the rift stays open 1 more minute per level (for the whole crew)"},

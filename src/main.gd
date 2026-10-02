@@ -686,13 +686,17 @@ func _environment() -> void:
 
 
 func _input_map() -> void:
+	# Arrows and the keys round them first: browser add-ons (Vim-style ones
+	# like Surfingkeys) grab letters such as D and E before the game sees
+	# them. The old letters still work as a second binding.
 	var m := {
-		"fwd": [KEY_W, KEY_UP], "back": [KEY_S, KEY_DOWN], "left": [KEY_A, KEY_LEFT], "right": [KEY_D, KEY_RIGHT],
-		"sprint": [KEY_SHIFT], "crouch": [KEY_C], "light": [KEY_F], "use": [KEY_E], "drop": [KEY_G], "jump": [KEY_SPACE], "decoy": [KEY_Q],
-		"scan": [KEY_R], "stun": [KEY_H],
+		"fwd": [KEY_UP, KEY_W], "back": [KEY_DOWN, KEY_S], "left": [KEY_LEFT, KEY_A], "right": [KEY_RIGHT, KEY_D],
+		"sprint": [KEY_SHIFT], "crouch": [KEY_SLASH, KEY_C], "light": [KEY_PERIOD, KEY_F], "use": [KEY_ENTER, KEY_KP_ENTER, KEY_E],
+		"drop": [KEY_BACKSPACE, KEY_G], "jump": [KEY_SPACE], "decoy": [KEY_COMMA, KEY_Q],
+		"scan": [KEY_SEMICOLON, KEY_R], "stun": [KEY_APOSTROPHE, KEY_H],
 		"sens_down": [KEY_BRACKETLEFT], "sens_up": [KEY_BRACKETRIGHT],
 		"slot1": [KEY_1], "slot2": [KEY_2], "slot3": [KEY_3], "slot4": [KEY_4], "slot5": [KEY_5], "slot6": [KEY_6],
-		"throw": [KEY_T], "emote1": [KEY_Z], "emote2": [KEY_X], "emote3": [KEY_V], "emote4": [KEY_B], "mute": [KEY_M],
+		"throw": [KEY_BACKSLASH, KEY_T], "emote1": [KEY_Z], "emote2": [KEY_X], "emote3": [KEY_V], "emote4": [KEY_B], "mute": [KEY_M],
 	}
 	for a in m:
 		if InputMap.has_action(a):
@@ -993,11 +997,13 @@ func _start() -> void:
 			tips.append([("+%s" % Run.cash(Run.last_haul)) if Run.last_haul > 0 else "came home empty-handed", 3.5])
 			Run.last_haul = -1
 		tips.append(["the TIME CONSOLE drops you in.  the SHOP sells hats.", 5.0])
+		if not touch:
+			tips.append(["ARROWS move   SHIFT run   / crouch   . lamp   ENTER use", 5.0])
 	else:
 		tips = [["", 1.0], ["%s  -  %s" % [cond.get("name", "CLEAR"), cond.get("about", "")], 4.0], ["the rift stays open for 7 minutes.", 3.5],
 			["carry loot back and set it down on the rift's carpet.  it all comes home with you.", 5.5],
 			["eggs are worth the most.  their parents disagree.", 4.0], [era.tip, 4.0],
-			["E grab   G drop   T throw   1-4 / wheel switch hands   Q decoy" if not touch else "GRAB it.  DROP it on the rift's carpet.", 5.0]]
+			["ENTER grab   BACKSPACE drop   \\ throw   1-4 / wheel switch hands   , decoy" if not touch else "GRAB it.  DROP it on the rift's carpet.", 5.0]]
 	if mode == "client":
 		if not touch:
 			tips.push_front(["click to grab the camera", 3.0])
@@ -2122,14 +2128,14 @@ func _update_list() -> void:
 	lines.append("")
 	lines.append(_quota_text())
 	if Run.decoys > 0:
-		lines.append("DECOYS  %d%s" % [Run.decoys, "" if touch else "  (Q)"])
+		lines.append("DECOYS  %d%s" % [Run.decoys, "" if touch else "  ( , )"])
 	var tools := []
 	if int(Run.gear.get("shovel", 0)) > 0:
 		tools.append("SHOVEL" + ("" if touch else " (click)"))
 	if int(Run.gear.get("scanner", 0)) > 0:
-		tools.append("SCAN" + ("" if touch else " (R)"))
+		tools.append("SCAN" + ("" if touch else " ( ; )"))
 	if int(Run.gear.get("flash", 0)) > 0:
-		tools.append("FLASH x%d" % local.flash_left + ("" if touch else " (H)"))
+		tools.append("FLASH x%d" % local.flash_left + ("" if touch else " ( ' )"))
 	if not tools.is_empty():
 		lines.append("  ".join(tools))
 	hud.set_list("\n".join(lines))
@@ -2221,6 +2227,8 @@ func _roster_tick(dt: float) -> void:
 # ================================================================ frame
 
 func _unhandled_input(e: InputEvent) -> void:
+	# the press that opens the console or shop mustn't also close it below
+	var ui_was := ui
 	if state == "play" and local.alive and not local.through and ui == "":
 		if e.is_action_pressed("use"):
 			_use()
@@ -2254,7 +2262,7 @@ func _unhandled_input(e: InputEvent) -> void:
 		Run.sens = clampf(Run.sens + (0.1 if e.is_action_pressed("sens_up") else -0.1), 0.2, 3.0)
 		Run.save()
 		hud.say([["look sensitivity  %.1f   ( [ and ] )" % Run.sens, 1.5]])
-	if e.is_action_pressed("use") and (ui == "console" or ui == "shop"):
+	if e.is_action_pressed("use") and (ui_was == "console" or ui_was == "shop"):
 		_close_ui()
 		get_viewport().set_input_as_handled()
 		return
@@ -2394,15 +2402,15 @@ func _play_tick(dt: float) -> void:
 		was.targeted = false
 	if target_loot:
 		target_loot.targeted = true
-		hud.prompt(("GRAB" if touch else "E  grab") + "  %s" % target_loot.item_name)
+		hud.prompt(("GRAB" if touch else "ENTER  grab") + "  %s" % target_loot.item_name)
 	elif target_spot == "rift":
-		hud.prompt(("HOME" if touch else "E") + "  go home now   (the crew takes " + Run.cash(_pad_value() + home_value) + ")")
+		hud.prompt(("HOME" if touch else "ENTER") + "  go home now   (the crew takes " + Run.cash(_pad_value() + home_value) + ")")
 	elif target_spot != "":
-		hud.prompt(("USE" if touch else "E") + "  " + {"console": "TIME CONSOLE", "shop": "SHOP"}[target_spot])
+		hud.prompt(("USE" if touch else "ENTER") + "  " + {"console": "TIME CONSOLE", "shop": "SHOP"}[target_spot])
 	elif local.held_item() >= 0 and exit_node and exit_node.on_pad(local):
-		hud.prompt(("DROP" if touch else "G") + "  set it down on the carpet")
+		hud.prompt(("DROP" if touch else "BACKSPACE") + "  set it down on the carpet")
 	elif local.held_item() >= 0 and loot[local.held_item()].two_handed and not hub:
-		hud.prompt("both hands full" + ("" if touch else "  -  G drop   T throw"))
+		hud.prompt("both hands full" + ("" if touch else "  -  BACKSPACE drop   \\ throw"))
 	elif local.free_slot() < 0 and not hub:
 		hud.prompt("hands full  -  take it back to the rift")
 	else:

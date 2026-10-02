@@ -11,6 +11,7 @@ var batt: Label
 var date: Label
 var tip: Label
 var paused_label: Label
+var controls_label: Label  # the key list, whenever the mouse is let go
 var card: ColorRect
 var card_title: Label
 var card_sub: Label
@@ -144,6 +145,20 @@ func _ready() -> void:
 	paused_label.offset_left = -300
 	paused_label.offset_right = 300
 	paused_label.visible = false
+	controls_label = _label(osd, "", 15, Vector2.ZERO)
+	controls_label.set_anchors_preset(Control.PRESET_CENTER)
+	controls_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	controls_label.offset_left = -470
+	controls_label.offset_right = 470
+	controls_label.offset_top = 36
+	controls_label.modulate = Color(0.85, 1.0, 0.85)
+	var bg := StyleBoxFlat.new()
+	bg.bg_color = Color(0, 0, 0, 0.6)
+	bg.set_corner_radius_all(6)
+	bg.content_margin_top = 8
+	bg.content_margin_bottom = 8
+	controls_label.add_theme_stylebox_override("normal", bg)
+	controls_label.visible = false
 
 	card = ColorRect.new()
 	card.color = Color(0.0, 0.0, 0.0, 1.0)

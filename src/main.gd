@@ -825,12 +825,22 @@ func _apply_dev_flags() -> void:
 
 # ================================================================ the hub: title, console, shop, co-op
 
+## The key list, for the title card and whenever the mouse is let go.
+func _controls_text() -> String:
+	var t := "ARROWS  move     SHIFT  run     SPACE  jump     /  crouch     .  lamp\n" \
+		+ "ENTER  grab / use     BACKSPACE  drop     \\  throw     1-4 or wheel  switch hands\n" \
+		+ ",  decoy     ;  scan     '  flash     [ ]  look speed     ESC  let go of the mouse"
+	if mode == "client":
+		t += "\nZ X V B  emotes     M  mute"
+	return t
+
+
 func _title() -> void:
 	state = "title"
 	ui = "title"
 	hud.show_card("DEEP TIME", "a time-travelling heist",
 		"Drop into prehistory. Grab the eggs and the treasure.\nGet back through the rift before something gets you.\nSpend the haul on hats.",
-		"", 0.8)
+		"" if touch else _controls_text(), 0.8)
 	hud.show_menu([
 		{"type": "button", "text": "PLAY", "cb": func() -> void:
 			Run.titled = true
@@ -997,8 +1007,6 @@ func _start() -> void:
 			tips.append([("+%s" % Run.cash(Run.last_haul)) if Run.last_haul > 0 else "came home empty-handed", 3.5])
 			Run.last_haul = -1
 		tips.append(["the TIME CONSOLE drops you in.  the SHOP sells hats.", 5.0])
-		if not touch:
-			tips.append(["ARROWS move   SHIFT run   / crouch   . lamp   ENTER use", 5.0])
 	else:
 		tips = [["", 1.0], ["%s  -  %s" % [cond.get("name", "CLEAR"), cond.get("about", "")], 4.0], ["the rift stays open for 7 minutes.", 3.5],
 			["carry loot back and set it down on the rift's carpet.  it all comes home with you.", 5.5],
@@ -2433,6 +2441,10 @@ func _play_tick(dt: float) -> void:
 	if mode == "client" and flags.has("bankat") and state_t > float(flags.bankat):
 		flags.erase("bankat")
 		local.position = exit_node.to_global(Vector3(0, 0, 2.0))
+	# the key list shows whenever the mouse is let go
+	hud.controls_label.visible = not touch and state == "play" and ui == "" and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED
+	if hud.controls_label.visible and hud.controls_label.text == "":
+		hud.controls_label.text = _controls_text()
 	if hub:
 		# dev: the host drops the crew in once enough have arrived (autostart=LEVEL,PLAYERS)
 		if mode == "client" and flags.has("autostart") and Net.host_id == my_id and state_t > 3.0:
